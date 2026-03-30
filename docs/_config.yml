@@ -1,0 +1,22 @@
+title: Zakira.Exchange
+description: AI Agent Memory Storage & Semantic Search - MCP Server and CLI Tool
+remote_theme: pages-themes/cayman@v0.2.0
+plugins:
+  - jekyll-remote-theme
+
+url: https://moaidhathot.github.io
+baseurl: /Zakira.Exchange
+
+header_pages:
+  - index.md
+  - getting-started.md
+  - cli-reference.md
+  - mcp-server.md
+  - configuration.md
+  - architecture.md
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor

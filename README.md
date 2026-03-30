@@ -4,6 +4,8 @@ An MCP server and CLI tool that enables AI agents to save, share, and search mem
 
 Memories are stored in SQLite with full-text search (FTS5) and semantic vector search (ONNX embeddings), merged via Reciprocal Rank Fusion for hybrid retrieval.
 
+**[Documentation](https://moaidhathot.github.io/Zakira.Exchange/)**
+
 ## Features
 
 - **Structured memory entries** with category, key, data, and rich metadata (author, reason, tags, custom key-value pairs, auto-managed timestamps)
@@ -13,6 +15,9 @@ Memories are stored in SQLite with full-text search (FTS5) and semantic vector s
 - **Access mode control** - restrict which operations agents can perform
 - **Const-category mode** - lock all operations to a single category, hiding the parameter from agents
 - **Single tool, two modes** - use `zakira` as a CLI tool, or `zakira mcp` to start as an MCP server
+- **Concurrent access** - multiple processes can access the same database simultaneously via SQLite WAL mode
+- **Lazy ONNX model loading** - the model is only loaded when create, edit, or search operations are invoked
+- **Environment variable configuration** - all CLI flags have corresponding environment variables
 
 ## Quick Start
 
@@ -87,6 +92,8 @@ Or if installed as a dotnet tool:
 }
 ```
 
+See the [MCP Server documentation](https://moaidhathot.github.io/Zakira.Exchange/mcp-server) for more configuration examples.
+
 ### MCP Tools
 
 The server exposes up to 6 tools depending on the access mode:
@@ -114,6 +121,8 @@ zakira search <query> [--category <name>] [--top <n>] [--author <name>] [--tags 
 zakira categories
 zakira mcp                              # Start as MCP server
 ```
+
+See the [CLI Reference](https://moaidhathot.github.io/Zakira.Exchange/cli-reference) for detailed command documentation.
 
 ## Concurrent Access
 
@@ -163,6 +172,8 @@ All flags are global and apply to every subcommand, including `mcp`.
 | `append-only` | yes | yes | no | no |
 | `no-delete` | yes | yes | yes | no |
 
+See the [Configuration documentation](https://moaidhathot.github.io/Zakira.Exchange/configuration) for more details.
+
 ## Architecture
 
 ```
@@ -178,6 +189,18 @@ Zakira.Exchange.Cli         Single entry point: CLI commands + MCP server (via '
 4. **Post-filtering**: Author and tag filters are applied after fusion
 
 Each entry is embedded as a single unit (key + data + tags + reason concatenated). No chunking is needed since memories are typically short structured entries.
+
+See the [Architecture documentation](https://moaidhathot.github.io/Zakira.Exchange/architecture) for a deep dive into internals.
+
+## Documentation
+
+Full documentation is available at **[moaidhathot.github.io/Zakira.Exchange](https://moaidhathot.github.io/Zakira.Exchange/)**:
+
+- [Getting Started](https://moaidhathot.github.io/Zakira.Exchange/getting-started) - Prerequisites, download, build, and first use
+- [CLI Reference](https://moaidhathot.github.io/Zakira.Exchange/cli-reference) - Complete command-line interface documentation
+- [MCP Server](https://moaidhathot.github.io/Zakira.Exchange/mcp-server) - Setting up Zakira as an MCP server for AI agents
+- [Configuration](https://moaidhathot.github.io/Zakira.Exchange/configuration) - CLI flags, environment variables, and access modes
+- [Architecture](https://moaidhathot.github.io/Zakira.Exchange/architecture) - Internals, search algorithm, and project structure
 
 ## License
 
