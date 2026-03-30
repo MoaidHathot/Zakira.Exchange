@@ -1,0 +1,13 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Shell scripts must use LF
+*.sh text eol=lf
+
+# Windows scripts use CRLF
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary files
+*.onnx binary

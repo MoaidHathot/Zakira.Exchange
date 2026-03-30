@@ -416,3 +416,12 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# ONNX model files (large binaries, download via scripts/download-model)
+*.onnx
+**/Models/vocab.txt
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal

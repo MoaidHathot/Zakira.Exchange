@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Authors>Moaid Hathot</Authors>
+    <Company>Moaid Hathot</Company>
+    <Product>Zakira.Exchange</Product>
+    <Copyright>Copyright (c) 2026 Moaid Hathot</Copyright>
+    <RepositoryUrl>https://github.com/MoaidHathot/Zakira.Exchange</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+</Project>

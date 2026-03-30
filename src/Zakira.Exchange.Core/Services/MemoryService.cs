@@ -1,0 +1,268 @@
+using Zakira.Exchange.Core.Configuration;
+using Zakira.Exchange.Core.Models;
+using Zakira.Exchange.Core.Search;
+using Zakira.Exchange.Core.Storage;
+
+namespace Zakira.Exchange.Core.Services;
+
+/// <summary>
+/// Main service that orchestrates memory CRUD operations and search.
+/// Handles embedding generation on write, search orchestration, and access mode enforcement.
+/// </summary>
+public sealed class MemoryService : IDisposable
+{
+    private readonly MemoryStore _store;
+    private readonly EmbeddingService _embeddingService;
+    private readonly HybridSearchEngine _searchEngine;
+    private readonly ZakiraOptions _options;
+
+    public MemoryService(ZakiraOptions options)
+    {
+        _options = options;
+
+        // Ensure database directory exists
+        var dbDir = Path.GetDirectoryName(Path.GetFullPath(options.DatabasePath));
+        if (!string.IsNullOrEmpty(dbDir) && !Directory.Exists(dbDir))
+        {
+            Directory.CreateDirectory(dbDir);
+        }
+
+        _store = new MemoryStore(options.DatabasePath);
+
+        // Resolve model and vocab paths
+        var (modelPath, vocabPath) = ResolveModelPaths(options.ModelPath);
+        _embeddingService = new EmbeddingService(modelPath, vocabPath);
+        _searchEngine = new HybridSearchEngine(_store, _embeddingService);
+    }
+
+    /// <summary>
+    /// Creates a new memory entry. Generates embedding and sets timestamps.
+    /// </summary>
+    public MemoryEntry Create(string category, string key, string data, string? author = null,
+        string? reason = null, List<string>? tags = null, Dictionary<string, string>? custom = null)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        // Apply const-category if configured
+        category = ResolveCategory(category);
+
+        var entry = new MemoryEntry
+        {
+            Category = category,
+            Key = key,
+            Data = data,
+            Metadata = new MemoryMetadata
+            {
+                Author = author,
+                Reason = reason,
+                Tags = tags ?? [],
+                Custom = custom ?? [],
+                CreatedAt = now,
+                LastModifiedAt = now,
+            }
+        };
+
+        // Generate embedding from the combined text of data + key + tags + reason
+        var embeddingText = BuildEmbeddingText(entry);
+        var embedding = _embeddingService.Embed(embeddingText);
+
+        _store.Create(entry, embedding);
+        return entry;
+    }
+
+    /// <summary>
+    /// Edits an existing memory entry. Only updates provided (non-null) fields.
+    /// Re-generates embedding and updates lastModifiedAt.
+    /// </summary>
+    public MemoryEntry? Edit(string category, string key, string? data = null,
+        string? author = null, string? reason = null, List<string>? tags = null,
+        Dictionary<string, string>? custom = null)
+    {
+        category = ResolveCategory(category);
+
+        var existing = _store.Get(category, key);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        // Update only provided fields
+        if (data is not null)
+        {
+            existing.Data = data;
+        }
+        if (author is not null)
+        {
+            existing.Metadata.Author = author;
+        }
+        if (reason is not null)
+        {
+            existing.Metadata.Reason = reason;
+        }
+        if (tags is not null)
+        {
+            existing.Metadata.Tags = tags;
+        }
+        if (custom is not null)
+        {
+            existing.Metadata.Custom = custom;
+        }
+
+        existing.Metadata.LastModifiedAt = DateTimeOffset.UtcNow;
+
+        // Re-generate embedding
+        var embeddingText = BuildEmbeddingText(existing);
+        var embedding = _embeddingService.Embed(embeddingText);
+
+        var updated = _store.Update(existing, embedding);
+        return updated ? existing : null;
+    }
+
+    /// <summary>
+    /// Deletes a memory entry by (category, key).
+    /// </summary>
+    public bool Delete(string category, string key)
+    {
+        category = ResolveCategory(category);
+        return _store.Delete(category, key);
+    }
+
+    /// <summary>
+    /// Gets a single memory entry by (category, key).
+    /// </summary>
+    public MemoryEntry? Get(string category, string key)
+    {
+        category = ResolveCategory(category);
+        return _store.Get(category, key);
+    }
+
+    /// <summary>
+    /// Lists memory entries with filtering.
+    /// </summary>
+    public List<MemoryEntry> List(ListFilter filter)
+    {
+        // Apply const-category if configured
+        if (_options.HasConstCategory)
+        {
+            filter.Category = _options.ConstCategory;
+        }
+
+        return _store.List(filter);
+    }
+
+    /// <summary>
+    /// Performs hybrid semantic + keyword search.
+    /// </summary>
+    public List<SearchResult> Search(SearchFilter filter)
+    {
+        // Apply const-category if configured
+        if (_options.HasConstCategory)
+        {
+            filter.Category = _options.ConstCategory;
+        }
+
+        return _searchEngine.Search(filter);
+    }
+
+    /// <summary>
+    /// Gets the list of distinct categories.
+    /// </summary>
+    public List<string> GetCategories()
+    {
+        return _store.GetCategories();
+    }
+
+    /// <summary>
+    /// Gets the total count of entries.
+    /// </summary>
+    public long GetCount(string? category = null)
+    {
+        if (_options.HasConstCategory)
+        {
+            category = _options.ConstCategory;
+        }
+        return _store.GetCount(category);
+    }
+
+    /// <summary>
+    /// The configured options.
+    /// </summary>
+    public ZakiraOptions Options => _options;
+
+    /// <summary>
+    /// Resolves the category, applying const-category if configured.
+    /// </summary>
+    private string ResolveCategory(string category)
+    {
+        return _options.HasConstCategory ? _options.ConstCategory! : category;
+    }
+
+    /// <summary>
+    /// Builds the text used for embedding generation from a memory entry.
+    /// Combines key, data, tags, and reason for broad semantic coverage.
+    /// </summary>
+    private static string BuildEmbeddingText(MemoryEntry entry)
+    {
+        var parts = new List<string> { entry.Key, entry.Data };
+
+        if (entry.Metadata.Tags.Count > 0)
+        {
+            parts.Add(string.Join(" ", entry.Metadata.Tags));
+        }
+
+        if (!string.IsNullOrWhiteSpace(entry.Metadata.Reason))
+        {
+            parts.Add(entry.Metadata.Reason);
+        }
+
+        return string.Join(" | ", parts);
+    }
+
+    /// <summary>
+    /// Resolves the ONNX model and vocabulary file paths.
+    /// Searches in order: custom path, alongside the executable, bundled in the package.
+    /// </summary>
+    private static (string ModelPath, string VocabPath) ResolveModelPaths(string? customModelPath)
+    {
+        if (customModelPath is not null)
+        {
+            var customVocab = Path.Combine(Path.GetDirectoryName(customModelPath) ?? ".", "vocab.txt");
+            if (File.Exists(customModelPath) && File.Exists(customVocab))
+            {
+                return (customModelPath, customVocab);
+            }
+            throw new FileNotFoundException($"Custom model or vocab not found. Model: {customModelPath}, Vocab: {customVocab}");
+        }
+
+        // Search relative to the executing assembly
+        var assemblyDir = Path.GetDirectoryName(typeof(MemoryService).Assembly.Location) ?? ".";
+        var searchPaths = new[]
+        {
+            Path.Combine(assemblyDir, "Models"),
+            Path.Combine(assemblyDir, "..", "Models"),
+            Path.Combine(assemblyDir),
+            Path.Combine(AppContext.BaseDirectory, "Models"),
+        };
+
+        foreach (var dir in searchPaths)
+        {
+            var modelPath = Path.Combine(dir, "all-MiniLM-L6-v2.onnx");
+            var vocabPath = Path.Combine(dir, "vocab.txt");
+            if (File.Exists(modelPath) && File.Exists(vocabPath))
+            {
+                return (modelPath, vocabPath);
+            }
+        }
+
+        throw new FileNotFoundException(
+            "ONNX model files not found. Please download them using the download-model script, " +
+            "or specify a custom model path with --model-path. " +
+            "Expected files: all-MiniLM-L6-v2.onnx and vocab.txt");
+    }
+
+    public void Dispose()
+    {
+        _embeddingService.Dispose();
+        _store.Dispose();
+    }
+}

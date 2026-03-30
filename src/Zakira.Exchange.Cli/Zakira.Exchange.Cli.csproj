@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PackageId>Zakira.Exchange.Cli</PackageId>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>zakira-cli</ToolCommandName>
+    <Description>CLI tool for Zakira.Exchange - AI agent memory storage and semantic search</Description>
+    <PackageTags>mcp;memory;ai;search;embeddings;sqlite;cli;dotnet-tool</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zakira.Exchange.Core\Zakira.Exchange.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta5.25306.1" />
+  </ItemGroup>
+
+</Project>
