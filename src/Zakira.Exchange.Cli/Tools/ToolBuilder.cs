@@ -6,7 +6,7 @@ using Zakira.Exchange.Core.Configuration;
 using Zakira.Exchange.Core.Models;
 using Zakira.Exchange.Core.Services;
 
-namespace Zakira.Exchange.Mcp.Tools;
+namespace Zakira.Exchange.Cli.Tools;
 
 /// <summary>
 /// Builds MCP tools dynamically based on access mode and const-category configuration.

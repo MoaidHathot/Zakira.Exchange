@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Zakira.Exchange.Core/Zakira.Exchange.Core.csproj" />
-    <Project Path="src/Zakira.Exchange.Mcp/Zakira.Exchange.Mcp.csproj" />
     <Project Path="src/Zakira.Exchange.Cli/Zakira.Exchange.Cli.csproj" />
   </Folder>
 </Solution>

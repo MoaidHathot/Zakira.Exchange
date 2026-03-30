@@ -12,7 +12,7 @@ Memories are stored in SQLite with full-text search (FTS5) and semantic vector s
 - **Hybrid search (RAG)** - BM25 keyword search + cosine vector similarity via `all-MiniLM-L6-v2` ONNX embeddings, fused with Reciprocal Rank Fusion (k=60)
 - **Access mode control** - restrict which operations agents can perform
 - **Const-category mode** - lock all operations to a single category, hiding the parameter from agents
-- **Two interfaces** - MCP server (for AI agents) and CLI tool (for humans)
+- **Single tool, two modes** - use `zakira` as a CLI tool, or `zakira mcp` to start as an MCP server
 
 ## Quick Start
 
@@ -40,18 +40,21 @@ This downloads `all-MiniLM-L6-v2.onnx` (~90MB) and `vocab.txt` (~230KB) from Hug
 dotnet build Zakira.Exchange.slnx
 ```
 
-### 3. Run the MCP server
-
-```bash
-dotnet run --project src/Zakira.Exchange.Mcp
-```
-
-### 4. Run the CLI
+### 3. Use as a CLI tool
 
 ```bash
 dotnet run --project src/Zakira.Exchange.Cli -- create general my-key --data "Hello, world!"
 dotnet run --project src/Zakira.Exchange.Cli -- list
 dotnet run --project src/Zakira.Exchange.Cli -- search "greeting"
+dotnet run --project src/Zakira.Exchange.Cli -- categories
+```
+
+### 4. Start as an MCP server
+
+```bash
+dotnet run --project src/Zakira.Exchange.Cli -- mcp
+dotnet run --project src/Zakira.Exchange.Cli -- mcp --access-mode read-only
+dotnet run --project src/Zakira.Exchange.Cli -- mcp --const-category notes --db ./notes.db
 ```
 
 ## MCP Server Configuration
@@ -64,7 +67,7 @@ Add to your MCP client configuration (e.g. Claude Desktop, VS Code, Cursor):
     "zakira": {
       "type": "stdio",
       "command": "dotnet",
-      "args": ["run", "--project", "path/to/src/Zakira.Exchange.Mcp"]
+      "args": ["run", "--project", "path/to/src/Zakira.Exchange.Cli", "--", "mcp"]
     }
   }
 }
@@ -78,7 +81,7 @@ Or if installed as a dotnet tool:
     "zakira": {
       "type": "stdio",
       "command": "zakira",
-      "args": ["--database-path", "./memories.db"]
+      "args": ["mcp", "--database-path", "./memories.db"]
     }
   }
 }
@@ -102,18 +105,36 @@ Tools not permitted by the access mode are simply not registered, making them in
 ## CLI Commands
 
 ```
-zakira-cli create <category> <key> --data <text> [--author <name>] [--reason <text>] [--tags <csv>] [--custom <json>]
-zakira-cli edit <category> <key> [--data <text>] [--author <name>] [--reason <text>] [--tags <csv>] [--custom <json>]
-zakira-cli delete <category> <key>
-zakira-cli get <category> <key>
-zakira-cli list [--category <name>] [--top <n>] [--author <name>] [--tags <csv>] [--before <iso8601>] [--after <iso8601>]
-zakira-cli search <query> [--category <name>] [--top <n>] [--author <name>] [--tags <csv>]
-zakira-cli categories
+zakira create <category> <key> --data <text> [--author <name>] [--reason <text>] [--tags <csv>] [--custom <json>]
+zakira edit <category> <key> [--data <text>] [--author <name>] [--reason <text>] [--tags <csv>] [--custom <json>]
+zakira delete <category> <key>
+zakira get <category> <key>
+zakira list [--category <name>] [--top <n>] [--author <name>] [--tags <csv>] [--before <iso8601>] [--after <iso8601>]
+zakira search <query> [--category <name>] [--top <n>] [--author <name>] [--tags <csv>]
+zakira categories
+zakira mcp                              # Start as MCP server
+```
+
+## Concurrent Access
+
+Multiple processes can access the same database simultaneously. SQLite WAL mode is enabled by default, so:
+
+- An MCP server can be running while you query the same database via CLI
+- Multiple MCP server instances can share the same database
+- Readers are never blocked by writers
+
+```bash
+# Terminal 1: MCP server running, agent is using it
+zakira mcp --db ./memories.db
+
+# Terminal 2: Query the same database via CLI
+zakira list --db ./memories.db
+zakira search "something" --db ./memories.db
 ```
 
 ## Options
 
-### CLI flags (MCP server and CLI)
+### CLI flags
 
 | Flag | Alias | Description | Default |
 |------|-------|-------------|---------|
@@ -121,6 +142,8 @@ zakira-cli categories
 | `--access-mode` | `--mode`, `-m` | Access restriction mode | `full` |
 | `--const-category` | `--category`, `-c` | Lock to a single category | none |
 | `--model-path` | `--model` | Custom ONNX model path | auto-detect |
+
+All flags are global and apply to every subcommand, including `mcp`.
 
 ### Environment variables
 
@@ -144,8 +167,7 @@ zakira-cli categories
 
 ```
 Zakira.Exchange.Core        Business logic, storage, search, embeddings
-Zakira.Exchange.Mcp         MCP server (stdio transport)
-Zakira.Exchange.Cli          CLI tool (System.CommandLine)
+Zakira.Exchange.Cli         Single entry point: CLI commands + MCP server (via 'mcp' subcommand)
 ```
 
 ### How search works

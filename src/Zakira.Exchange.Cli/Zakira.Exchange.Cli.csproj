@@ -2,10 +2,10 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <PackageId>Zakira.Exchange.Cli</PackageId>
+    <PackageId>Zakira.Exchange</PackageId>
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>zakira-cli</ToolCommandName>
-    <Description>CLI tool for Zakira.Exchange - AI agent memory storage and semantic search</Description>
+    <ToolCommandName>zakira</ToolCommandName>
+    <Description>An MCP server and CLI tool for AI agent memory storage and semantic search. Enables agents to save, share, and search memories using hybrid search (BM25 + vector embeddings).</Description>
     <PackageTags>mcp;memory;ai;search;embeddings;sqlite;cli;dotnet-tool</PackageTags>
   </PropertyGroup>
 
@@ -15,6 +15,8 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta5.25306.1" />
+    <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.*" />
   </ItemGroup>
 
 </Project>

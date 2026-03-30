@@ -8,13 +8,16 @@ namespace Zakira.Exchange.Core.Services;
 /// <summary>
 /// Main service that orchestrates memory CRUD operations and search.
 /// Handles embedding generation on write, search orchestration, and access mode enforcement.
+/// The ONNX model is loaded lazily - only when an operation that requires embeddings is invoked
+/// (create, edit, search). Operations like list, get, delete, and categories work without the model.
 /// </summary>
 public sealed class MemoryService : IDisposable
 {
     private readonly MemoryStore _store;
-    private readonly EmbeddingService _embeddingService;
-    private readonly HybridSearchEngine _searchEngine;
     private readonly ZakiraOptions _options;
+    private readonly object _embeddingLock = new();
+    private EmbeddingService? _embeddingService;
+    private HybridSearchEngine? _searchEngine;
 
     public MemoryService(ZakiraOptions options)
     {
@@ -28,11 +31,31 @@ public sealed class MemoryService : IDisposable
         }
 
         _store = new MemoryStore(options.DatabasePath);
+    }
 
-        // Resolve model and vocab paths
-        var (modelPath, vocabPath) = ResolveModelPaths(options.ModelPath);
-        _embeddingService = new EmbeddingService(modelPath, vocabPath);
-        _searchEngine = new HybridSearchEngine(_store, _embeddingService);
+    /// <summary>
+    /// Ensures the embedding service and search engine are initialized.
+    /// Called lazily on first create, edit, or search operation.
+    /// Thread-safe via double-checked locking.
+    /// </summary>
+    private void EnsureEmbeddingInitialized()
+    {
+        if (_embeddingService is not null)
+        {
+            return;
+        }
+
+        lock (_embeddingLock)
+        {
+            if (_embeddingService is not null)
+            {
+                return;
+            }
+
+            var (modelPath, vocabPath) = ResolveModelPaths(_options.ModelPath);
+            _embeddingService = new EmbeddingService(modelPath, vocabPath);
+            _searchEngine = new HybridSearchEngine(_store, _embeddingService);
+        }
     }
 
     /// <summary>
@@ -41,6 +64,8 @@ public sealed class MemoryService : IDisposable
     public MemoryEntry Create(string category, string key, string data, string? author = null,
         string? reason = null, List<string>? tags = null, Dictionary<string, string>? custom = null)
     {
+        EnsureEmbeddingInitialized();
+
         var now = DateTimeOffset.UtcNow;
 
         // Apply const-category if configured
@@ -64,7 +89,7 @@ public sealed class MemoryService : IDisposable
 
         // Generate embedding from the combined text of data + key + tags + reason
         var embeddingText = BuildEmbeddingText(entry);
-        var embedding = _embeddingService.Embed(embeddingText);
+        var embedding = _embeddingService!.Embed(embeddingText);
 
         _store.Create(entry, embedding);
         return entry;
@@ -78,6 +103,8 @@ public sealed class MemoryService : IDisposable
         string? author = null, string? reason = null, List<string>? tags = null,
         Dictionary<string, string>? custom = null)
     {
+        EnsureEmbeddingInitialized();
+
         category = ResolveCategory(category);
 
         var existing = _store.Get(category, key);
@@ -112,7 +139,7 @@ public sealed class MemoryService : IDisposable
 
         // Re-generate embedding
         var embeddingText = BuildEmbeddingText(existing);
-        var embedding = _embeddingService.Embed(embeddingText);
+        var embedding = _embeddingService!.Embed(embeddingText);
 
         var updated = _store.Update(existing, embedding);
         return updated ? existing : null;
@@ -155,13 +182,15 @@ public sealed class MemoryService : IDisposable
     /// </summary>
     public List<SearchResult> Search(SearchFilter filter)
     {
+        EnsureEmbeddingInitialized();
+
         // Apply const-category if configured
         if (_options.HasConstCategory)
         {
             filter.Category = _options.ConstCategory;
         }
 
-        return _searchEngine.Search(filter);
+        return _searchEngine!.Search(filter);
     }
 
     /// <summary>
@@ -262,7 +291,7 @@ public sealed class MemoryService : IDisposable
 
     public void Dispose()
     {
-        _embeddingService.Dispose();
+        _embeddingService?.Dispose();
         _store.Dispose();
     }
 }

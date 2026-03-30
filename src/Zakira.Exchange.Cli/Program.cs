@@ -1,5 +1,10 @@
 using System.CommandLine;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
+using Zakira.Exchange.Cli.Tools;
 using Zakira.Exchange.Core.Configuration;
 using Zakira.Exchange.Core.Models;
 using Zakira.Exchange.Core.Services;
@@ -330,8 +335,60 @@ categoriesCommand.SetAction(parseResult =>
     }
 });
 
+// --- MCP command ---
+var mcpCommand = new Command("mcp", "Start as an MCP server (stdio transport) for AI agent integration");
+
+mcpCommand.SetAction(async parseResult =>
+{
+    var db = parseResult.GetValue(databaseOption)!;
+    var mode = parseResult.GetValue(accessModeOption)!;
+    var constCat = parseResult.GetValue(constCategoryOption);
+    var modelPath = parseResult.GetValue(modelPathOption);
+
+    var options = BuildOptions(db, mode, constCat, modelPath);
+
+    // Log startup diagnostics to stderr (visible in MCP client logs)
+    Console.Error.WriteLine("[Zakira.Exchange] Starting MCP server...");
+    Console.Error.WriteLine($"[Zakira.Exchange] Database: {Path.GetFullPath(options.DatabasePath)}");
+    Console.Error.WriteLine($"[Zakira.Exchange] Access mode: {options.AccessMode.ToString().ToLowerInvariant()}");
+    if (options.HasConstCategory) Console.Error.WriteLine($"[Zakira.Exchange] Const category: {options.ConstCategory}");
+    if (options.ModelPath is not null) Console.Error.WriteLine($"[Zakira.Exchange] Custom model: {options.ModelPath}");
+
+    // Initialize the memory service
+    using var memoryService = new MemoryService(options);
+
+    var entryCount = memoryService.GetCount();
+    Console.Error.WriteLine($"[Zakira.Exchange] Database initialized. {entryCount} entries found.");
+
+    // Build tools based on access mode and const-category
+    var tools = ToolBuilder.BuildTools(memoryService);
+    Console.Error.WriteLine($"[Zakira.Exchange] Registered {tools.Count} tools: {string.Join(", ", tools.Select(t => t.ProtocolTool.Name))}");
+
+    // Build and run the MCP server
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.AddConsole(consoleLogOptions =>
+    {
+        consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
+    });
+
+    builder.Services
+        .AddSingleton(memoryService)
+        .AddMcpServer(mcpOptions =>
+        {
+            mcpOptions.ServerInfo = new()
+            {
+                Name = "zakira-exchange",
+                Version = typeof(ToolBuilder).Assembly.GetName().Version?.ToString() ?? "1.0.0",
+            };
+        })
+        .WithStdioServerTransport()
+        .WithTools(tools);
+
+    await builder.Build().RunAsync();
+});
+
 // --- Root command ---
-var rootCommand = new RootCommand("Zakira.Exchange CLI - AI Agent Memory Storage & Semantic Search");
+var rootCommand = new RootCommand("Zakira.Exchange - AI Agent Memory Storage & Semantic Search");
 rootCommand.Subcommands.Add(createCommand);
 rootCommand.Subcommands.Add(editCommand);
 rootCommand.Subcommands.Add(deleteCommand);
@@ -339,6 +396,7 @@ rootCommand.Subcommands.Add(getCommand);
 rootCommand.Subcommands.Add(listCommand);
 rootCommand.Subcommands.Add(searchCommand);
 rootCommand.Subcommands.Add(categoriesCommand);
+rootCommand.Subcommands.Add(mcpCommand);
 
 // Add global options (recursive to all subcommands)
 databaseOption.Recursive = true;
@@ -354,9 +412,9 @@ return rootCommand.Parse(args).Invoke();
 
 // --- Helper methods ---
 
-static MemoryService BuildService(string db, string mode, string? constCat, string? modelPath)
+static ZakiraOptions BuildOptions(string db, string mode, string? constCat, string? modelPath)
 {
-    var options = new ZakiraOptions
+    return new ZakiraOptions
     {
         DatabasePath = db,
         AccessMode = mode.ToLowerInvariant() switch
@@ -370,8 +428,11 @@ static MemoryService BuildService(string db, string mode, string? constCat, stri
         ConstCategory = constCat,
         ModelPath = modelPath,
     };
+}
 
-    return new MemoryService(options);
+static MemoryService BuildService(string db, string mode, string? constCat, string? modelPath)
+{
+    return new MemoryService(BuildOptions(db, mode, constCat, modelPath));
 }
 
 static void CheckAccess(AccessMode mode, string operation)
