@@ -21,7 +21,7 @@ Memories are stored in SQLite with full-text search (FTS5) and semantic vector s
 - **Full CRUD** -- create, edit, delete, get, list entries
 - **Hybrid search (RAG)** -- BM25 keyword search + cosine vector similarity via `all-MiniLM-L6-v2` ONNX embeddings, fused with Reciprocal Rank Fusion (k=60)
 - **Access mode control** -- restrict which operations agents can perform (full, read-only, append-only, no-delete)
-- **Const-category mode** -- lock all operations to a single category, hiding the parameter from agents
+- **Const-category mode** -- lock all operations to a single category via `--category`, hiding the parameter from agents
 - **Single tool, two modes** -- use `zakira` as a CLI tool, or `zakira mcp` to start as an MCP server (stdio transport)
 - **Concurrent access** -- multiple processes can access the same database simultaneously via SQLite WAL mode
 - **Lazy ONNX model loading** -- the model is only loaded when create, edit, or search operations are invoked

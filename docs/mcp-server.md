@@ -98,7 +98,7 @@ You can restrict what agents can do and lock them to a specific category:
     "zakira": {
       "type": "stdio",
       "command": "zakira",
-      "args": ["mcp", "--access-mode", "no-delete", "--const-category", "project-notes"]
+      "args": ["mcp", "--access-mode", "no-delete", "--category", "project-notes"]
     }
   }
 }
@@ -118,7 +118,7 @@ Environment variables can be used instead of or alongside CLI flags:
       "env": {
         "ZAKIRA_DATABASE_PATH": "./memories.db",
         "ZAKIRA_ACCESS_MODE": "no-delete",
-        "ZAKIRA_CONST_CATEGORY": "project-notes"
+        "ZAKIRA_CATEGORY": "project-notes"
       }
     }
   }
@@ -145,7 +145,7 @@ Creates a new memory entry with a unique (category, key) pair.
 | `tags` | no | Comma-separated tags |
 | `custom` | no | JSON object of custom key-value metadata |
 
-*Hidden when const-category is set.
+*Hidden when `--category` is set.
 
 **Available in modes:** full, append-only, no-delete
 
@@ -165,7 +165,7 @@ Edits an existing memory entry. Only provided fields are updated.
 | `tags` | no | Updated tags |
 | `custom` | no | Updated custom metadata |
 
-*Hidden when const-category is set.
+*Hidden when `--category` is set.
 
 **Available in modes:** full, no-delete
 
@@ -180,7 +180,7 @@ Permanently deletes a memory entry.
 | `category` | yes* | Category of the entry to delete |
 | `key` | yes | Key of the entry to delete |
 
-*Hidden when const-category is set.
+*Hidden when `--category` is set.
 
 **Available in modes:** full
 
@@ -195,7 +195,7 @@ Retrieves a specific memory entry by its category and key.
 | `category` | yes* | Category of the entry |
 | `key` | yes | Key of the entry to retrieve |
 
-*Hidden when const-category is set.
+*Hidden when `--category` is set.
 
 **Available in modes:** all
 
@@ -214,7 +214,7 @@ Lists memory entries with optional filtering, ordered by last modified date (new
 | `before` | no | Only entries before this ISO 8601 timestamp |
 | `after` | no | Only entries after this ISO 8601 timestamp |
 
-*Hidden when const-category is set.
+*Hidden when `--category` is set.
 
 **Available in modes:** all
 
@@ -232,7 +232,7 @@ Searches for memories using hybrid semantic + keyword search. Uses natural langu
 | `author` | no | Filter by author |
 | `tags` | no | Filter by tags (comma-separated, matches any) |
 
-*Hidden when const-category is set.
+*Hidden when `--category` is set.
 
 **Available in modes:** all
 

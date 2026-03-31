@@ -121,7 +121,7 @@ public static class ToolBuilder
                 ) =>
                 {
                     var tagList = tags is not null ? ParseTags(tags) : null;
-                    var customDict = tags is not null ? ParseCustom(custom) : (custom is not null ? ParseCustom(custom) : null);
+                    var customDict = custom is not null ? ParseCustom(custom) : null;
                     var entry = service.Edit(options.ConstCategory!, key, data, author, reason, tagList, customDict);
                     return entry is not null
                         ? FormatEntry(entry)
@@ -148,7 +148,7 @@ public static class ToolBuilder
             ) =>
             {
                 var tagList = tags is not null ? ParseTags(tags) : null;
-                var customDict = tags is not null ? ParseCustom(custom) : (custom is not null ? ParseCustom(custom) : null);
+                var customDict = custom is not null ? ParseCustom(custom) : null;
                 var entry = service.Edit(category, key, data, author, reason, tagList, customDict);
                 return entry is not null
                     ? FormatEntry(entry)

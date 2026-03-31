@@ -3,4 +3,7 @@
     <Project Path="src/Zakira.Exchange.Core/Zakira.Exchange.Core.csproj" />
     <Project Path="src/Zakira.Exchange.Cli/Zakira.Exchange.Cli.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Zakira.Exchange.Tests/Zakira.Exchange.Tests.csproj" />
+  </Folder>
 </Solution>

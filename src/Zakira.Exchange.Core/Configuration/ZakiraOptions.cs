@@ -24,6 +24,7 @@ public sealed class ZakiraOptions
 
     /// <summary>
     /// Path to a custom ONNX model file. When null, uses the bundled all-MiniLM-L6-v2 model.
+    /// The vocab.txt file is expected to be in the same directory as the model file.
     /// </summary>
     public string? ModelPath { get; set; }
 

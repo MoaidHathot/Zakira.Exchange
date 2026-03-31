@@ -6,7 +6,7 @@ nav_order: 3
 
 # CLI Reference
 
-Zakira provides a full-featured command-line interface for managing memory entries. All commands support global options for database path, access mode, const-category, and model path.
+Zakira provides a full-featured command-line interface for managing memory entries. All commands support global options for database path, access mode, category lock, and model path.
 
 ---
 
@@ -18,8 +18,8 @@ These options apply to all commands, including `mcp`:
 |------|-------|-------------|---------|
 | `--database-path` | `--db`, `-d` | SQLite database file path | `./zakira.db` |
 | `--access-mode` | `--mode`, `-m` | Access restriction mode | `full` |
-| `--const-category` | `--category`, `-c` | Lock to a single category | none |
-| `--model-path` | `--model` | Custom ONNX model path | auto-detect |
+| `--category` | `-c` | Lock to a single category | none |
+| `--model-path` | `--model` | Path to the ONNX model file | auto-detect |
 
 ---
 
@@ -132,12 +132,12 @@ zakira list [options]
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `--category` / `--cat` | option | no | Filter by category |
+| `--cat` | option | no | Filter by category |
 | `--top` / `-n` | option | no | Max results (default: 50) |
 | `--author` | option | no | Filter by author |
 | `--tags` | option | no | Filter by tags (comma-separated, matches any) |
-| `--before` | option | no | Only entries before this ISO 8601 timestamp |
-| `--after` | option | no | Only entries after this ISO 8601 timestamp |
+| `--before` | option | no | Only entries last modified before this ISO 8601 timestamp |
+| `--after` | option | no | Only entries last modified after this ISO 8601 timestamp |
 
 **Examples:**
 ```bash
@@ -145,7 +145,7 @@ zakira list [options]
 zakira list
 
 # List entries in a specific category
-zakira list --category decisions
+zakira list --cat decisions
 
 # List entries by a specific author, limited to 10 results
 zakira list --author architect --top 10
@@ -170,7 +170,7 @@ zakira search <query> [options]
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `query` | argument | yes | Search query (natural language) |
-| `--category` / `--cat` | option | no | Filter by category |
+| `--cat` | option | no | Filter by category |
 | `--top` / `-n` | option | no | Max results (default: 10) |
 | `--author` | option | no | Filter by author |
 | `--tags` | option | no | Filter by tags (comma-separated, matches any) |
@@ -181,7 +181,7 @@ zakira search <query> [options]
 zakira search "caching strategy"
 
 # Search within a specific category
-zakira search "authentication approach" --category decisions
+zakira search "authentication approach" --cat decisions
 
 # Search with tag filtering
 zakira search "performance optimization" --tags "backend"
@@ -228,5 +228,5 @@ zakira mcp
 zakira mcp --access-mode read-only
 
 # Start locked to a single category
-zakira mcp --const-category notes --db ./notes.db
+zakira mcp --category notes --db ./notes.db
 ```

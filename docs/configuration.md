@@ -16,8 +16,8 @@ Zakira can be configured via CLI flags or environment variables. All settings ap
 |------|-------|-------------|---------|
 | `--database-path` | `--db`, `-d` | SQLite database file path | `./zakira.db` |
 | `--access-mode` | `--mode`, `-m` | Access restriction mode | `full` |
-| `--const-category` | `--category`, `-c` | Lock to a single category | none |
-| `--model-path` | `--model` | Custom ONNX model path | auto-detect |
+| `--category` | `-c` | Lock to a single category | none |
+| `--model-path` | `--model` | Path to the ONNX model file | auto-detect |
 
 ---
 
@@ -29,8 +29,8 @@ Every CLI flag has a corresponding environment variable. Environment variables a
 |----------|----------------|---------|
 | `ZAKIRA_DATABASE_PATH` | `--database-path` | `./memories.db` |
 | `ZAKIRA_ACCESS_MODE` | `--access-mode` | `read-only` |
-| `ZAKIRA_CONST_CATEGORY` | `--const-category` | `project-notes` |
-| `ZAKIRA_MODEL_PATH` | `--model-path` | `/path/to/models/` |
+| `ZAKIRA_CATEGORY` | `--category` | `project-notes` |
+| `ZAKIRA_MODEL_PATH` | `--model-path` | `/path/to/model.onnx` |
 
 CLI flags take precedence over environment variables when both are set.
 
@@ -67,7 +67,7 @@ zakira mcp --access-mode no-delete
 
 ## Const-Category Mode
 
-When `--const-category` is set, all operations are locked to that single category. The category parameter is hidden from MCP tool schemas, so agents cannot see or change it.
+When `--category` is set, all operations are locked to that single category. The category parameter is hidden from MCP tool schemas, so agents cannot see or change it.
 
 This is useful for:
 - Restricting an agent to a specific namespace (e.g., project-specific notes)
@@ -76,10 +76,10 @@ This is useful for:
 
 ```bash
 # Lock to "project-notes" category
-zakira mcp --const-category project-notes
+zakira mcp --category project-notes
 
 # Combine with access mode
-zakira mcp --const-category project-notes --access-mode no-delete
+zakira mcp --category project-notes --access-mode no-delete
 ```
 
 ---
@@ -100,10 +100,10 @@ zakira mcp --db /path/to/my-memories.db
 
 ## Model Path
 
-By default, Zakira looks for the ONNX model files (`all-MiniLM-L6-v2.onnx` and `vocab.txt`) in the assembly's directory. You can override this with a custom path.
+By default, Zakira looks for the ONNX model files (`all-MiniLM-L6-v2.onnx` and `vocab.txt`) in the assembly's directory. You can override this by specifying the path to the `.onnx` model file. The `vocab.txt` file is expected to be in the same directory as the model file.
 
 ```bash
-zakira mcp --model-path /path/to/models/
+zakira mcp --model-path /path/to/all-MiniLM-L6-v2.onnx
 ```
 
 > **Note:** The model is loaded lazily. It is only initialized when a create, edit, or search operation is performed. List, get, delete, and categories commands work without the model.

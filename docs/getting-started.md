@@ -80,7 +80,7 @@ dotnet run --project src/Zakira.Exchange.Cli -- mcp
 dotnet run --project src/Zakira.Exchange.Cli -- mcp --access-mode read-only
 
 # Start locked to a single category with a custom database
-dotnet run --project src/Zakira.Exchange.Cli -- mcp --const-category notes --db ./notes.db
+dotnet run --project src/Zakira.Exchange.Cli -- mcp --category notes --db ./notes.db
 ```
 
 See [MCP Server](mcp-server) for detailed setup instructions for Claude Desktop, VS Code, and Cursor.

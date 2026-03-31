@@ -70,11 +70,13 @@ The search engine uses a hybrid approach combining two ranking methods and mergi
 
 ### Step 1: Keyword Search (BM25)
 
-SQLite FTS5 performs full-text search with BM25 scoring against the entry's concatenated fields:
+SQLite FTS5 performs full-text search with BM25 scoring against the entry's indexed fields:
+- Category
 - Key
 - Data
-- Tags
+- Author
 - Reason
+- Tags
 
 BM25 is a probabilistic ranking function that scores documents based on term frequency, inverse document frequency, and document length normalization.
 
@@ -88,7 +90,7 @@ The query is embedded using the `all-MiniLM-L6-v2` ONNX model:
 4. **L2 normalization:** The embedding is normalized so cosine similarity equals dot product
 5. **Comparison:** The query embedding is compared against all stored entry embeddings using dot product (brute-force search)
 
-Each memory entry is embedded as a single concatenated string: `key + data + tags + reason`. No chunking is needed since memories are typically short structured entries.
+Each memory entry is embedded as a single concatenated string: `key | data | tags | reason` (joined with ` | `). No chunking is needed since memories are typically short structured entries.
 
 ### Step 3: Reciprocal Rank Fusion (RRF)
 
@@ -121,7 +123,8 @@ After fusion, author and tag filters are applied to the merged result set. This 
 | `Key` | string | Unique key within the category |
 | `Data` | string | The memory content (text) |
 | `Metadata` | MemoryMetadata | Rich metadata object |
-| `Embedding` | float[] | 384-dim vector embedding |
+
+> **Note:** Embeddings (384-dim float arrays) are stored in the SQLite database alongside each entry but are not exposed as a property on the `MemoryEntry` model. They are managed internally by the storage and search layers.
 
 ### MemoryMetadata
 
@@ -138,11 +141,12 @@ After fusion, author and tag filters are applied to the merged result set. This 
 
 ## SQLite Schema
 
-Each category gets its own table. The storage layer creates:
+All entries are stored in a single `memories` table with category as a column. The storage layer creates:
 
-1. **Main table** (`memories_{category}`) -- stores entries with their data, metadata (JSON), and embedding (BLOB)
-2. **FTS5 virtual table** (`memories_{category}_fts`) -- full-text search index over key, data, tags, and reason
+1. **Main table** (`memories`) -- stores entries with their data, metadata (JSON), and embedding (BLOB), with a composite primary key of (category, key)
+2. **FTS5 virtual table** (`memories_fts`) -- full-text search index over category, key, data, author, reason, and tags
 3. **Triggers** -- keep the FTS index synchronized with the main table on insert, update, and delete
+4. **Indexes** -- on last_modified_at, created_at, and category for efficient filtering
 
 WAL (Write-Ahead Logging) mode is enabled on the database connection for concurrent read/write access.
 

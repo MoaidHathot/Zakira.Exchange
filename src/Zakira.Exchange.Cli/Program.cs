@@ -19,7 +19,7 @@ var jsonOptions = new JsonSerializerOptions
 var databaseOption = new Option<string>("--database-path")
 {
     Description = "SQLite database file path",
-    DefaultValueFactory = _ => "zakira.db"
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("ZAKIRA_DATABASE_PATH") ?? "zakira.db"
 };
 databaseOption.Aliases.Add("--db");
 databaseOption.Aliases.Add("-d");
@@ -27,21 +27,24 @@ databaseOption.Aliases.Add("-d");
 var accessModeOption = new Option<string>("--access-mode")
 {
     Description = "Access mode: full, read-only, append-only, no-delete",
-    DefaultValueFactory = _ => "full"
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("ZAKIRA_ACCESS_MODE") ?? "full"
 };
 accessModeOption.Aliases.Add("--mode");
 accessModeOption.Aliases.Add("-m");
 
-var constCategoryOption = new Option<string?>("--const-category")
+var constCategoryOption = new Option<string?>("--category")
 {
-    Description = "Lock all operations to this category"
+    Description = "Lock all operations to this category",
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("ZAKIRA_CATEGORY")
 };
 constCategoryOption.Aliases.Add("-c");
 
 var modelPathOption = new Option<string?>("--model-path")
 {
-    Description = "Path to custom ONNX model directory"
+    Description = "Path to the ONNX model file",
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("ZAKIRA_MODEL_PATH")
 };
+modelPathOption.Aliases.Add("--model");
 
 // --- Create command ---
 var createCategoryArg = new Argument<string>("category") { Description = "Category/table for the memory" };
@@ -201,8 +204,7 @@ getCommand.SetAction(parseResult =>
 });
 
 // --- List command ---
-var listCategoryOption = new Option<string?>("--category") { Description = "Filter by category" };
-listCategoryOption.Aliases.Add("--cat");
+var listCategoryOption = new Option<string?>("--cat") { Description = "Filter by category" };
 var listTopOption = new Option<int>("--top") { Description = "Max results", DefaultValueFactory = _ => 50 };
 listTopOption.Aliases.Add("-n");
 var listAuthorOption = new Option<string?>("--author") { Description = "Filter by author" };
@@ -261,8 +263,7 @@ listCommand.SetAction(parseResult =>
 
 // --- Search command ---
 var searchQueryArg = new Argument<string>("query") { Description = "Search query (natural language)" };
-var searchCategoryOption = new Option<string?>("--category") { Description = "Filter by category" };
-searchCategoryOption.Aliases.Add("--cat");
+var searchCategoryOption = new Option<string?>("--cat") { Description = "Filter by category" };
 var searchTopOption = new Option<int>("--top") { Description = "Max results", DefaultValueFactory = _ => 10 };
 searchTopOption.Aliases.Add("-n");
 var searchAuthorOption = new Option<string?>("--author") { Description = "Filter by author" };

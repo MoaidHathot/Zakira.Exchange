@@ -13,7 +13,7 @@ Memories are stored in SQLite with full-text search (FTS5) and semantic vector s
 - **Full CRUD** - create, edit, delete, get, list entries
 - **Hybrid search (RAG)** - BM25 keyword search + cosine vector similarity via `all-MiniLM-L6-v2` ONNX embeddings, fused with Reciprocal Rank Fusion (k=60)
 - **Access mode control** - restrict which operations agents can perform
-- **Const-category mode** - lock all operations to a single category, hiding the parameter from agents
+- **Const-category mode** - lock all operations to a single category via `--category`, hiding the parameter from agents
 - **Single tool, two modes** - use `zakira` as a CLI tool, or `zakira mcp` to start as an MCP server
 - **Concurrent access** - multiple processes can access the same database simultaneously via SQLite WAL mode
 - **Lazy ONNX model loading** - the model is only loaded when create, edit, or search operations are invoked
@@ -59,7 +59,7 @@ dotnet run --project src/Zakira.Exchange.Cli -- categories
 ```bash
 dotnet run --project src/Zakira.Exchange.Cli -- mcp
 dotnet run --project src/Zakira.Exchange.Cli -- mcp --access-mode read-only
-dotnet run --project src/Zakira.Exchange.Cli -- mcp --const-category notes --db ./notes.db
+dotnet run --project src/Zakira.Exchange.Cli -- mcp --category notes --db ./notes.db
 ```
 
 ## MCP Server Configuration
@@ -116,8 +116,8 @@ zakira create <category> <key> --data <text> [--author <name>] [--reason <text>]
 zakira edit <category> <key> [--data <text>] [--author <name>] [--reason <text>] [--tags <csv>] [--custom <json>]
 zakira delete <category> <key>
 zakira get <category> <key>
-zakira list [--category <name>] [--top <n>] [--author <name>] [--tags <csv>] [--before <iso8601>] [--after <iso8601>]
-zakira search <query> [--category <name>] [--top <n>] [--author <name>] [--tags <csv>]
+zakira list [--cat <name>] [--top <n>] [--author <name>] [--tags <csv>] [--before <iso8601>] [--after <iso8601>]
+zakira search <query> [--cat <name>] [--top <n>] [--author <name>] [--tags <csv>]
 zakira categories
 zakira mcp                              # Start as MCP server
 ```
@@ -149,8 +149,8 @@ zakira search "something" --db ./memories.db
 |------|-------|-------------|---------|
 | `--database-path` | `--db`, `-d` | SQLite database file path | `./zakira.db` |
 | `--access-mode` | `--mode`, `-m` | Access restriction mode | `full` |
-| `--const-category` | `--category`, `-c` | Lock to a single category | none |
-| `--model-path` | `--model` | Custom ONNX model path | auto-detect |
+| `--category` | `-c` | Lock to a single category | none |
+| `--model-path` | `--model` | Path to the ONNX model file | auto-detect |
 
 All flags are global and apply to every subcommand, including `mcp`.
 
@@ -160,7 +160,7 @@ All flags are global and apply to every subcommand, including `mcp`.
 |----------|----------------|
 | `ZAKIRA_DATABASE_PATH` | `--database-path` |
 | `ZAKIRA_ACCESS_MODE` | `--access-mode` |
-| `ZAKIRA_CONST_CATEGORY` | `--const-category` |
+| `ZAKIRA_CATEGORY` | `--category` |
 | `ZAKIRA_MODEL_PATH` | `--model-path` |
 
 ### Access modes
@@ -183,12 +183,12 @@ Zakira.Exchange.Cli         Single entry point: CLI commands + MCP server (via '
 
 ### How search works
 
-1. **Keyword search**: SQLite FTS5 with BM25 scoring against the entry's key, data, tags, and reason
+1. **Keyword search**: SQLite FTS5 with BM25 scoring against the entry's category, key, data, author, reason, and tags
 2. **Vector search**: ONNX `all-MiniLM-L6-v2` generates 384-dim embeddings; cosine similarity via dot product (L2-normalized vectors)
 3. **Fusion**: Reciprocal Rank Fusion (k=60) merges both ranked lists into a single result set
 4. **Post-filtering**: Author and tag filters are applied after fusion
 
-Each entry is embedded as a single unit (key + data + tags + reason concatenated). No chunking is needed since memories are typically short structured entries.
+Each entry is embedded as a single unit (key, data, tags, and reason joined with ` | `). No chunking is needed since memories are typically short structured entries.
 
 See the [Architecture documentation](https://moaidhathot.github.io/Zakira.Exchange/architecture) for a deep dive into internals.
 
