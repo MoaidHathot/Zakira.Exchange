@@ -8,10 +8,13 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <Version>0.1.0</Version>
     <Authors>Moaid Hathot</Authors>
     <Company>Moaid Hathot</Company>
     <Product>Zakira.Exchange</Product>
     <Copyright>Copyright (c) 2026 Moaid Hathot</Copyright>
+    <PackageLicenseExpression>Unlicense</PackageLicenseExpression>
+    <PackageProjectUrl>https://moaidhathot.github.io/Zakira.Exchange/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/MoaidHathot/Zakira.Exchange</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>

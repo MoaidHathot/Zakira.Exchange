@@ -421,6 +421,9 @@ FodyWeavers.xsd
 *.onnx
 **/Models/vocab.txt
 
+# NuGet pack output
+nupkgs/
+
 # SQLite databases
 *.db
 *.db-shm
