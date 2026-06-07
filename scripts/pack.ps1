@@ -5,23 +5,37 @@
 .DESCRIPTION
     Cleans, builds in Release mode, runs tests, and produces a .nupkg (and .snupkg)
     ready to push to NuGet. The package is output to the nupkgs/ directory at the repo root.
+    Optionally pushes the resulting packages to nuget.org with -Push.
 .PARAMETER OutputDir
     Directory to place the .nupkg file. Default: <repo-root>/nupkgs
 .PARAMETER SkipTests
     Skip running tests before packing.
 .PARAMETER Version
     Override the package version (e.g. 1.0.0). If omitted, uses the version from the project file.
+.PARAMETER Push
+    After packing, push the generated *.nupkg files to nuget.org.
+.PARAMETER ApiKey
+    NuGet API key for -Push. Falls back to the NUGET_API_KEY environment variable when omitted.
+.PARAMETER Source
+    NuGet source URL for -Push. Defaults to https://api.nuget.org/v3/index.json
 .EXAMPLE
     ./scripts/pack.ps1
 .EXAMPLE
     ./scripts/pack.ps1 -Version 1.2.0
 .EXAMPLE
     ./scripts/pack.ps1 -SkipTests
+.EXAMPLE
+    ./scripts/pack.ps1 -Push                           # uses $env:NUGET_API_KEY
+.EXAMPLE
+    ./scripts/pack.ps1 -Push -ApiKey oy2xxxxxxx        # explicit key
 #>
 param(
     [string]$OutputDir,
     [switch]$SkipTests,
-    [string]$Version
+    [string]$Version,
+    [switch]$Push,
+    [string]$ApiKey,
+    [string]$Source = "https://api.nuget.org/v3/index.json"
 )
 
 $ErrorActionPreference = "Stop"
@@ -90,10 +104,44 @@ if ($LASTEXITCODE -ne 0) {
 # --- Done ---
 Write-Host ""
 Write-Host "Package created in: $OutputDir" -ForegroundColor Green
-Get-ChildItem $OutputDir -Filter "*.nupkg" | ForEach-Object {
+$packages = Get-ChildItem $OutputDir -Filter "*.nupkg"
+$packages | ForEach-Object {
     Write-Host "  $($_.Name)  ($([math]::Round($_.Length / 1KB, 1)) KB)" -ForegroundColor Green
 }
 
-Write-Host ""
-Write-Host "To push to NuGet:" -ForegroundColor Cyan
-Write-Host "  dotnet nuget push `"$OutputDir\*.nupkg`" --api-key <YOUR_API_KEY> --source https://api.nuget.org/v3/index.json"
+# --- Push ---
+if ($Push) {
+    if (-not $ApiKey) {
+        $ApiKey = $env:NUGET_API_KEY
+    }
+    if (-not $ApiKey) {
+        Write-Error "Pack succeeded, but -Push requires -ApiKey or the NUGET_API_KEY environment variable to be set."
+        exit 1
+    }
+
+    if (-not $packages) {
+        Write-Error "No .nupkg files found in $OutputDir to push."
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "Pushing $($packages.Count) package(s) to $Source..." -ForegroundColor Cyan
+    foreach ($pkg in $packages) {
+        Write-Host "  -> $($pkg.Name)" -ForegroundColor Cyan
+        dotnet nuget push $pkg.FullName `
+            --api-key $ApiKey `
+            --source $Source `
+            --skip-duplicate
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Push failed for $($pkg.Name)."
+            exit 1
+        }
+    }
+    Write-Host ""
+    Write-Host "Push complete." -ForegroundColor Green
+} else {
+    Write-Host ""
+    Write-Host "To push to NuGet:" -ForegroundColor Cyan
+    Write-Host "  ./scripts/pack.ps1 -Push                  # uses `$env:NUGET_API_KEY"
+    Write-Host "  ./scripts/pack.ps1 -Push -ApiKey <key>    # explicit key"
+}
