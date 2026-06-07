@@ -6,6 +6,13 @@
     Cleans, builds in Release mode, runs tests, and produces a .nupkg (and .snupkg)
     ready to push to NuGet. The package is output to the nupkgs/ directory at the repo root.
     Optionally pushes the resulting packages to nuget.org with -Push.
+
+    By default the script refuses to pack unless the ONNX model files
+    (all-MiniLM-L6-v2.onnx + vocab.txt) are present under
+    src/Zakira.Exchange.Core/Models/. Without them the package will install but
+    every Create/Edit/Search call will throw FileNotFoundException, which is
+    how the 0.3.0 release got broken. Pass -AllowMissingModel to skip this
+    check (intentional model-less builds for offline distribution etc.).
 .PARAMETER OutputDir
     Directory to place the .nupkg file. Default: <repo-root>/nupkgs
 .PARAMETER SkipTests
@@ -18,6 +25,9 @@
     NuGet API key for -Push. Falls back to the NUGET_API_KEY environment variable when omitted.
 .PARAMETER Source
     NuGet source URL for -Push. Defaults to https://api.nuget.org/v3/index.json
+.PARAMETER AllowMissingModel
+    Pack even if the ONNX model files are missing. Off by default to prevent
+    accidentally shipping a non-functional package.
 .EXAMPLE
     ./scripts/pack.ps1
 .EXAMPLE
@@ -35,7 +45,8 @@ param(
     [string]$Version,
     [switch]$Push,
     [string]$ApiKey,
-    [string]$Source = "https://api.nuget.org/v3/index.json"
+    [string]$Source = "https://api.nuget.org/v3/index.json",
+    [switch]$AllowMissingModel
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,11 +54,44 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $solution = Join-Path $repoRoot "Zakira.Exchange.slnx"
 $cliProject = Join-Path $repoRoot "src" "Zakira.Exchange.Cli" "Zakira.Exchange.Cli.csproj"
+$modelDir = Join-Path $repoRoot "src" "Zakira.Exchange.Core" "Models"
+$modelFile = Join-Path $modelDir "all-MiniLM-L6-v2.onnx"
+$vocabFile = Join-Path $modelDir "vocab.txt"
 
 if (-not $OutputDir) {
     $OutputDir = Join-Path $repoRoot "nupkgs"
 }
 $OutputDir = [System.IO.Path]::GetFullPath($OutputDir)
+
+# --- Guard: model files must be present, or -AllowMissingModel must be explicit ---
+$modelMissing = -not (Test-Path $modelFile) -or -not (Test-Path $vocabFile)
+if ($modelMissing) {
+    if (-not $AllowMissingModel) {
+        Write-Host ""
+        Write-Host "ERROR: ONNX model files are missing from $modelDir" -ForegroundColor Red
+        Write-Host "  Expected: all-MiniLM-L6-v2.onnx  ($([bool](Test-Path $modelFile)))"
+        Write-Host "  Expected: vocab.txt              ($([bool](Test-Path $vocabFile)))"
+        Write-Host ""
+        Write-Host "Without these files the resulting package will install but every"
+        Write-Host "Create/Edit/Search call will throw FileNotFoundException."
+        Write-Host "(This is what broke the 0.3.0 release.)"
+        Write-Host ""
+        Write-Host "Fix:"
+        Write-Host "  ./scripts/download-model.ps1"
+        Write-Host ""
+        Write-Host "Or, if you really want a model-less build:"
+        Write-Host "  ./scripts/pack.ps1 -AllowMissingModel"
+        Write-Host ""
+        Write-Error "Aborting pack."
+        exit 1
+    }
+
+    Write-Host ""
+    Write-Host "WARNING: -AllowMissingModel is set; packing without ONNX model files." -ForegroundColor Yellow
+    Write-Host "Resulting package will throw on first Create/Edit/Search unless the"
+    Write-Host "model is supplied by some other means at runtime." -ForegroundColor Yellow
+    Write-Host ""
+}
 
 # --- Clean ---
 Write-Host "Cleaning solution..." -ForegroundColor Cyan

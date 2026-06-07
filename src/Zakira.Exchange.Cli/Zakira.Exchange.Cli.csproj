@@ -8,7 +8,7 @@
     <Description>An MCP server and CLI tool for AI agent memory storage and semantic search. Enables agents to save, share, and search memories using hybrid search (BM25 + vector embeddings via all-MiniLM-L6-v2), merged with Reciprocal Rank Fusion. Built with .NET 10 and SQLite -- standalone with no external service dependencies.</Description>
     <PackageTags>mcp;memory;ai;search;embeddings;sqlite;cli;dotnet-tool;semantic-search;rag;vector;onnx;llm;agent</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>0.3.0 -- thread-safe MemoryStore via connection pooling; FTS5 search modes (any/all/phrase) exposed via SearchFilter.Mode, MCP search_memories `mode` parameter, and CLI `--mode`; optimistic concurrency on edit via `expectedLastModifiedAt` on MCP edit_memory and CLI `--expected-modified` (exit code 2 on conflict), backed by new UpdateOutcome enum and EditResult result type. All changes additive; backward-compatible.</PackageReleaseNotes>
+    <PackageReleaseNotes>0.3.1 -- hotfix: bundle the all-MiniLM-L6-v2 ONNX model and vocab.txt with the package. 0.3.0 was packed on a build machine that hadn't downloaded the model files, so the conditional `&lt;ItemGroup Condition="Exists(...)"&gt;` in Core.csproj silently dropped them and any environment without a pre-existing model copy hit FileNotFoundException on the first Create/Edit/Search call. No code changes from 0.3.0; pack.ps1 now refuses to pack without the model files unless -AllowMissingModel is passed.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
