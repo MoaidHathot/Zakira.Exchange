@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using ModelContextProtocol.Server;
@@ -117,22 +118,23 @@ public static class ToolBuilder
                     [Description("Updated author. If omitted, existing value is kept.")] string? author,
                     [Description("Updated reason. If omitted, existing value is kept.")] string? reason,
                     [Description("Updated comma-separated tags. If omitted, existing tags are kept.")] string? tags,
-                    [Description("Updated JSON object of custom key-value metadata. If omitted, existing custom data is kept.")] string? custom
+                    [Description("Updated JSON object of custom key-value metadata. If omitted, existing custom data is kept.")] string? custom,
+                    [Description("Optional optimistic-concurrency check. Pass the entry's current lastModifiedAt (ISO 8601, UTC) from a prior get_memory; the edit will only apply if the value still matches, otherwise the call returns a conflict with the current value so you can re-fetch and retry. Omit for last-write-wins.")] string? expectedLastModifiedAt
                 ) =>
                 {
                     var tagList = tags is not null ? ParseTags(tags) : null;
                     var customDict = custom is not null ? ParseCustom(custom) : null;
-                    var entry = service.Edit(options.ConstCategory!, key, data, author, reason, tagList, customDict);
-                    return entry is not null
-                        ? FormatEntry(entry)
-                        : $"Memory entry with key '{key}' not found in category '{options.ConstCategory}'.";
+                    var expected = ParseTimestamp(expectedLastModifiedAt);
+                    var result = service.EditWithConcurrency(options.ConstCategory!, key, data, author, reason, tagList, customDict, expected);
+                    return FormatEditResult(result, options.ConstCategory!, key);
                 },
                 new McpServerToolCreateOptions
                 {
                     Name = "edit_memory",
                     Description = $"Edits an existing memory entry in the '{options.ConstCategory}' category. " +
                                   "Only provided fields are updated; omitted fields keep their current values. " +
-                                  "The lastModifiedAt timestamp is updated automatically."
+                                  "The lastModifiedAt timestamp is updated automatically. " +
+                                  "Pass expectedLastModifiedAt to enable optimistic-concurrency control (see parameter docs)."
                 });
         }
 
@@ -144,21 +146,22 @@ public static class ToolBuilder
                 [Description("Updated author. If omitted, existing value is kept.")] string? author,
                 [Description("Updated reason. If omitted, existing value is kept.")] string? reason,
                 [Description("Updated comma-separated tags. If omitted, existing tags are kept.")] string? tags,
-                [Description("Updated JSON object of custom key-value metadata. If omitted, existing custom data is kept.")] string? custom
+                [Description("Updated JSON object of custom key-value metadata. If omitted, existing custom data is kept.")] string? custom,
+                [Description("Optional optimistic-concurrency check. Pass the entry's current lastModifiedAt (ISO 8601, UTC) from a prior get_memory; the edit will only apply if the value still matches, otherwise the call returns a conflict with the current value so you can re-fetch and retry. Omit for last-write-wins.")] string? expectedLastModifiedAt
             ) =>
             {
                 var tagList = tags is not null ? ParseTags(tags) : null;
                 var customDict = custom is not null ? ParseCustom(custom) : null;
-                var entry = service.Edit(category, key, data, author, reason, tagList, customDict);
-                return entry is not null
-                    ? FormatEntry(entry)
-                    : $"Memory entry with category '{category}' and key '{key}' not found.";
+                var expected = ParseTimestamp(expectedLastModifiedAt);
+                var result = service.EditWithConcurrency(category, key, data, author, reason, tagList, customDict, expected);
+                return FormatEditResult(result, category, key);
             },
             new McpServerToolCreateOptions
             {
                 Name = "edit_memory",
                 Description = "Edits an existing memory entry. Only provided fields are updated; omitted fields keep their current values. " +
-                              "The lastModifiedAt timestamp is updated automatically."
+                              "The lastModifiedAt timestamp is updated automatically. " +
+                              "Pass expectedLastModifiedAt to enable optimistic-concurrency control (see parameter docs)."
             });
     }
 
@@ -468,6 +471,49 @@ public static class ToolBuilder
             "all"    => SearchMode.All,
             "phrase" => SearchMode.Phrase,
             _        => SearchMode.Any,
+        };
+    }
+
+    /// <summary>
+    /// Parses an ISO 8601 timestamp (round-trip "O" format) supplied by an agent.
+    /// Returns null when the input is null/whitespace or unparseable - the caller
+    /// then treats it as "no optimistic-concurrency check", which is safe.
+    /// </summary>
+    private static DateTimeOffset? ParseTimestamp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind | DateTimeStyles.AssumeUniversal,
+            out var parsed)
+            ? parsed
+            : (DateTimeOffset?)null;
+    }
+
+    /// <summary>
+    /// Formats an <see cref="EditResult"/> as the human-readable text returned by
+    /// the <c>edit_memory</c> MCP tool.
+    /// </summary>
+    private static string FormatEditResult(EditResult result, string category, string key)
+    {
+        return result.Outcome switch
+        {
+            EditOutcome.Updated when result.Entry is not null
+                => FormatEntry(result.Entry),
+            EditOutcome.NotFound
+                => $"Memory entry with category '{category}' and key '{key}' not found.",
+            EditOutcome.Conflict
+                => $"Conflict editing memory entry [{category}] {key}: " +
+                   $"the entry was modified since you last read it " +
+                   $"(current lastModifiedAt: {result.CurrentLastModifiedAt?.UtcDateTime.ToString("O", CultureInfo.InvariantCulture) ?? "unknown"}). " +
+                   "Re-fetch with get_memory and merge your changes, " +
+                   "or call edit_memory again with the new expectedLastModifiedAt.",
+            _ => $"Memory entry with category '{category}' and key '{key}' not found.",
         };
     }
 

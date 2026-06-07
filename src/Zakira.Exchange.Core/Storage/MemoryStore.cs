@@ -127,7 +127,7 @@ public sealed class MemoryStore : IDisposable
             VALUES (@category, @key, @data, @author, @reason, @tags, @custom, @createdAt, @lastModifiedAt, @embedding);
             """;
 
-        BindEntryParameters(cmd, entry, embedding);
+        BindInsertParameters(cmd, entry, embedding);
 
         try
         {
@@ -141,26 +141,75 @@ public sealed class MemoryStore : IDisposable
 
     /// <summary>
     /// Updates an existing memory entry. Returns false if not found.
+    /// Backward-compatible wrapper around the optimistic-concurrency overload.
     /// </summary>
     public bool Update(MemoryEntry entry, float[]? embedding)
+        => Update(entry, embedding, expectedLastModifiedAt: null) == UpdateOutcome.Updated;
+
+    /// <summary>
+    /// Updates an existing memory entry with optional optimistic-concurrency control.
+    /// When <paramref name="expectedLastModifiedAt"/> is supplied, the update only
+    /// applies if the row's current <c>last_modified_at</c> equals that value; otherwise
+    /// the call returns <see cref="UpdateOutcome.Conflict"/> and the row is unchanged.
+    /// When <paramref name="expectedLastModifiedAt"/> is null, the row is updated
+    /// unconditionally (last-write-wins).
+    /// </summary>
+    public UpdateOutcome Update(MemoryEntry entry, float[]? embedding, DateTimeOffset? expectedLastModifiedAt)
     {
         using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            UPDATE memories
-            SET data = @data,
-                author = @author,
-                reason = @reason,
-                tags = @tags,
-                custom = @custom,
-                last_modified_at = @lastModifiedAt,
-                embedding = @embedding
-            WHERE category = @category AND key = @key;
-            """;
 
-        BindEntryParameters(cmd, entry, embedding);
-        // Don't update created_at
-        return cmd.ExecuteNonQuery() > 0;
+        if (expectedLastModifiedAt is null)
+        {
+            cmd.CommandText = """
+                UPDATE memories
+                SET data = @data,
+                    author = @author,
+                    reason = @reason,
+                    tags = @tags,
+                    custom = @custom,
+                    last_modified_at = @lastModifiedAt,
+                    embedding = @embedding
+                WHERE category = @category AND key = @key;
+                """;
+        }
+        else
+        {
+            cmd.CommandText = """
+                UPDATE memories
+                SET data = @data,
+                    author = @author,
+                    reason = @reason,
+                    tags = @tags,
+                    custom = @custom,
+                    last_modified_at = @lastModifiedAt,
+                    embedding = @embedding
+                WHERE category = @category AND key = @key AND last_modified_at = @expected;
+                """;
+        }
+
+        BindUpdateParameters(cmd, entry, embedding);
+        if (expectedLastModifiedAt is not null)
+        {
+            cmd.Parameters.AddWithValue("@expected", expectedLastModifiedAt.Value.UtcDateTime.ToString("O"));
+        }
+
+        var affected = cmd.ExecuteNonQuery();
+        if (affected > 0)
+        {
+            return UpdateOutcome.Updated;
+        }
+
+        // 0 rows affected: disambiguate NotFound vs Conflict.
+        // With no expected timestamp, the only reason for 0 affected is that the row doesn't exist.
+        if (expectedLastModifiedAt is null)
+        {
+            return UpdateOutcome.NotFound;
+        }
+
+        // With an expected timestamp, we can't tell from affected==0 alone whether the row
+        // is missing or just stale; check existence with a fresh pooled connection.
+        return Get(entry.Category, entry.Key) is null ? UpdateOutcome.NotFound : UpdateOutcome.Conflict;
     }
 
     /// <summary>
@@ -385,7 +434,19 @@ public sealed class MemoryStore : IDisposable
         return (long)cmd.ExecuteScalar()!;
     }
 
-    private static void BindEntryParameters(SqliteCommand cmd, MemoryEntry entry, float[]? embedding)
+    private static void BindInsertParameters(SqliteCommand cmd, MemoryEntry entry, float[]? embedding)
+    {
+        BindCommonParameters(cmd, entry, embedding);
+        cmd.Parameters.AddWithValue("@createdAt", entry.Metadata.CreatedAt.UtcDateTime.ToString("O"));
+    }
+
+    private static void BindUpdateParameters(SqliteCommand cmd, MemoryEntry entry, float[]? embedding)
+    {
+        // UPDATE does not touch created_at, so @createdAt is intentionally not bound.
+        BindCommonParameters(cmd, entry, embedding);
+    }
+
+    private static void BindCommonParameters(SqliteCommand cmd, MemoryEntry entry, float[]? embedding)
     {
         cmd.Parameters.AddWithValue("@category", entry.Category);
         cmd.Parameters.AddWithValue("@key", entry.Key);
@@ -398,7 +459,6 @@ public sealed class MemoryStore : IDisposable
         cmd.Parameters.AddWithValue("@custom", entry.Metadata.Custom.Count > 0
             ? JsonSerializer.Serialize(entry.Metadata.Custom, JsonOptions)
             : DBNull.Value);
-        cmd.Parameters.AddWithValue("@createdAt", entry.Metadata.CreatedAt.UtcDateTime.ToString("O"));
         cmd.Parameters.AddWithValue("@lastModifiedAt", entry.Metadata.LastModifiedAt.UtcDateTime.ToString("O"));
 
         if (embedding is not null)

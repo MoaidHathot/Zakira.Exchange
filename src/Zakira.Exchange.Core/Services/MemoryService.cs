@@ -97,21 +97,51 @@ public sealed class MemoryService : IDisposable
 
     /// <summary>
     /// Edits an existing memory entry. Only updates provided (non-null) fields.
-    /// Re-generates embedding and updates lastModifiedAt.
+    /// Re-generates embedding and updates lastModifiedAt. Backward-compatible
+    /// wrapper around <see cref="EditWithConcurrency"/>; last-write-wins.
     /// </summary>
     public MemoryEntry? Edit(string category, string key, string? data = null,
         string? author = null, string? reason = null, List<string>? tags = null,
         Dictionary<string, string>? custom = null)
     {
-        EnsureEmbeddingInitialized();
+        var result = EditWithConcurrency(category, key, data, author, reason, tags, custom, expectedLastModifiedAt: null);
+        return result.Outcome == EditOutcome.Updated ? result.Entry : null;
+    }
 
+    /// <summary>
+    /// Edits an existing memory entry with optional optimistic-concurrency control.
+    /// When <paramref name="expectedLastModifiedAt"/> is provided, the edit only
+    /// applies if the entry's current <c>LastModifiedAt</c> matches; otherwise
+    /// returns <see cref="EditOutcome.Conflict"/> with the current value so the
+    /// caller can re-fetch and retry. When null, last-write-wins.
+    /// Only updates provided (non-null) fields.
+    /// </summary>
+    public EditResult EditWithConcurrency(string category, string key, string? data,
+        string? author, string? reason, List<string>? tags,
+        Dictionary<string, string>? custom, DateTimeOffset? expectedLastModifiedAt)
+    {
         category = ResolveCategory(category);
 
         var existing = _store.Get(category, key);
         if (existing is null)
         {
-            return null;
+            return new EditResult { Outcome = EditOutcome.NotFound };
         }
+
+        // Early conflict check: avoid the embedding pass when we already know the
+        // expected value is stale. The SQL UPDATE's WHERE clause is still the
+        // authoritative check against a racing writer.
+        if (expectedLastModifiedAt is not null
+            && existing.Metadata.LastModifiedAt != expectedLastModifiedAt.Value)
+        {
+            return new EditResult
+            {
+                Outcome = EditOutcome.Conflict,
+                CurrentLastModifiedAt = existing.Metadata.LastModifiedAt,
+            };
+        }
+
+        EnsureEmbeddingInitialized();
 
         // Update only provided fields
         if (data is not null)
@@ -137,12 +167,21 @@ public sealed class MemoryService : IDisposable
 
         existing.Metadata.LastModifiedAt = DateTimeOffset.UtcNow;
 
-        // Re-generate embedding
         var embeddingText = BuildEmbeddingText(existing);
         var embedding = _embeddingService!.Embed(embeddingText);
 
-        var updated = _store.Update(existing, embedding);
-        return updated ? existing : null;
+        var outcome = _store.Update(existing, embedding, expectedLastModifiedAt);
+        return outcome switch
+        {
+            UpdateOutcome.Updated => new EditResult { Outcome = EditOutcome.Updated, Entry = existing },
+            UpdateOutcome.NotFound => new EditResult { Outcome = EditOutcome.NotFound },
+            UpdateOutcome.Conflict => new EditResult
+            {
+                Outcome = EditOutcome.Conflict,
+                CurrentLastModifiedAt = _store.Get(category, key)?.Metadata.LastModifiedAt,
+            },
+            _ => new EditResult { Outcome = EditOutcome.NotFound },
+        };
     }
 
     /// <summary>

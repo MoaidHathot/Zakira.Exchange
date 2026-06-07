@@ -166,6 +166,67 @@ public class MemoryStoreTests : IDisposable
     }
 
     [Fact]
+    public void Update_WithExpectedMatching_ReturnsUpdated()
+    {
+        var original = CreateEntry(key: "k1", data: "v1");
+        _store.Create(original, null);
+
+        var stored = _store.Get("test", "k1");
+        Assert.NotNull(stored);
+
+        var edited = CreateEntry(key: "k1", data: "v2");
+        edited.Metadata.LastModifiedAt = DateTimeOffset.UtcNow;
+        var outcome = _store.Update(edited, null, expectedLastModifiedAt: stored.Metadata.LastModifiedAt);
+
+        Assert.Equal(UpdateOutcome.Updated, outcome);
+        Assert.Equal("v2", _store.Get("test", "k1")!.Data);
+    }
+
+    [Fact]
+    public void Update_WithExpectedStale_ReturnsConflict_RowUnchanged()
+    {
+        var original = CreateEntry(key: "k1", data: "v1");
+        _store.Create(original, null);
+        var staleExpected = _store.Get("test", "k1")!.Metadata.LastModifiedAt;
+
+        // Simulate another writer winning the race: do an unconditional update first.
+        var firstUpdate = CreateEntry(key: "k1", data: "v2-by-other");
+        firstUpdate.Metadata.LastModifiedAt = DateTimeOffset.UtcNow.AddSeconds(1);
+        var firstOutcome = _store.Update(firstUpdate, null);
+        Assert.True(firstOutcome);
+
+        // Now our edit, using the now-stale expected timestamp, must conflict.
+        var ourEdit = CreateEntry(key: "k1", data: "v3-ours");
+        ourEdit.Metadata.LastModifiedAt = DateTimeOffset.UtcNow.AddSeconds(2);
+        var outcome = _store.Update(ourEdit, null, expectedLastModifiedAt: staleExpected);
+
+        Assert.Equal(UpdateOutcome.Conflict, outcome);
+        // The row must still hold the previous writer's value, not ours.
+        Assert.Equal("v2-by-other", _store.Get("test", "k1")!.Data);
+    }
+
+    [Fact]
+    public void Update_WithExpectedButNoSuchEntry_ReturnsNotFound()
+    {
+        var entry = CreateEntry(category: "nope", key: "nokey", data: "data");
+        var outcome = _store.Update(entry, null, expectedLastModifiedAt: DateTimeOffset.UtcNow);
+        Assert.Equal(UpdateOutcome.NotFound, outcome);
+    }
+
+    [Fact]
+    public void Update_WithoutExpected_BackwardCompatibleSemantics()
+    {
+        _store.Create(CreateEntry(key: "k1", data: "v1"), null);
+
+        var edited = CreateEntry(key: "k1", data: "v2");
+        edited.Metadata.LastModifiedAt = DateTimeOffset.UtcNow;
+        var boolResult = _store.Update(edited, null);
+
+        Assert.True(boolResult);
+        Assert.Equal("v2", _store.Get("test", "k1")!.Data);
+    }
+
+    [Fact]
     public void Update_WithNewEmbedding_ReplacesOld()
     {
         var entry = CreateEntry();

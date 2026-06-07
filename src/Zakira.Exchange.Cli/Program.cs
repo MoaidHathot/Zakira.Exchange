@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -97,6 +98,7 @@ var editAuthorOption = new Option<string?>("--author") { Description = "Updated 
 var editReasonOption = new Option<string?>("--reason") { Description = "Updated reason" };
 var editTagsOption = new Option<string?>("--tags") { Description = "Updated comma-separated tags" };
 var editCustomOption = new Option<string?>("--custom") { Description = "Updated JSON object of custom metadata" };
+var editExpectedOption = new Option<string?>("--expected-modified") { Description = "Optional ISO 8601 (UTC) timestamp for optimistic concurrency. Edit only applies if the entry's current lastModifiedAt matches; otherwise exits 2 (conflict)." };
 
 var editCommand = new Command("edit", "Edit an existing memory entry");
 editCommand.Arguments.Add(editCategoryArg);
@@ -106,6 +108,7 @@ editCommand.Options.Add(editAuthorOption);
 editCommand.Options.Add(editReasonOption);
 editCommand.Options.Add(editTagsOption);
 editCommand.Options.Add(editCustomOption);
+editCommand.Options.Add(editExpectedOption);
 
 editCommand.SetAction(parseResult =>
 {
@@ -124,18 +127,38 @@ editCommand.SetAction(parseResult =>
     var reason = parseResult.GetValue(editReasonOption);
     var tags = parseResult.GetValue(editTagsOption);
     var custom = parseResult.GetValue(editCustomOption);
+    var expectedRaw = parseResult.GetValue(editExpectedOption);
 
     var tagList = tags is not null ? ParseTags(tags) : null;
     var customDict = custom is not null ? ParseCustom(custom, jsonOptions) : null;
-    var entry = service.Edit(category, key, data, author, reason, tagList, customDict);
-    if (entry is null)
+    var expected = ParseTimestamp(expectedRaw);
+
+    if (expectedRaw is not null && expected is null)
     {
-        Console.Error.WriteLine($"Memory entry [{category}] {key} not found.");
+        Console.Error.WriteLine($"Invalid --expected-modified value: '{expectedRaw}'. Use an ISO 8601 timestamp like 2026-06-07T15:32:11.234Z.");
         return 1;
     }
-    Console.WriteLine($"Updated memory entry [{entry.Category}] {entry.Key}");
-    PrintEntry(entry, jsonOptions);
-    return 0;
+
+    var result = service.EditWithConcurrency(category, key, data, author, reason, tagList, customDict, expected);
+    switch (result.Outcome)
+    {
+        case EditOutcome.Updated when result.Entry is not null:
+            Console.WriteLine($"Updated memory entry [{result.Entry.Category}] {result.Entry.Key}");
+            PrintEntry(result.Entry, jsonOptions);
+            return 0;
+        case EditOutcome.NotFound:
+            Console.Error.WriteLine($"Memory entry [{category}] {key} not found.");
+            return 1;
+        case EditOutcome.Conflict:
+            var current = result.CurrentLastModifiedAt?.UtcDateTime.ToString("O", CultureInfo.InvariantCulture) ?? "unknown";
+            Console.Error.WriteLine($"Conflict editing memory entry [{category}] {key}: " +
+                $"the entry was modified since you last read it (current lastModifiedAt: {current}). " +
+                "Re-fetch with `get` and merge your changes, or re-run with the new --expected-modified.");
+            return 2;
+        default:
+            Console.Error.WriteLine($"Memory entry [{category}] {key} not found.");
+            return 1;
+    }
 });
 
 // --- Delete command ---
@@ -474,6 +497,18 @@ static SearchMode ParseSearchMode(string? mode)
         "phrase" => SearchMode.Phrase,
         _        => SearchMode.Any,
     };
+}
+
+static DateTimeOffset? ParseTimestamp(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value)) return null;
+    return DateTimeOffset.TryParse(
+        value,
+        CultureInfo.InvariantCulture,
+        DateTimeStyles.RoundtripKind | DateTimeStyles.AssumeUniversal,
+        out var parsed)
+        ? parsed
+        : (DateTimeOffset?)null;
 }
 
 static Dictionary<string, string>? ParseCustom(string? custom, JsonSerializerOptions jsonOptions)

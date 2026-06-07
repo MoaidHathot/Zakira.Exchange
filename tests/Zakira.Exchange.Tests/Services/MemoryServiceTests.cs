@@ -70,6 +70,36 @@ public class MemoryServiceTests : IDisposable
     }
 
     [Fact]
+    public void EditWithConcurrency_NoSuchEntry_ReturnsNotFoundWithoutLoadingModel()
+    {
+        // The store has no entries, so EditWithConcurrency must short-circuit on
+        // the existence check before touching the embedding service. This both
+        // exercises the wiring of the new overload and verifies we don't pay the
+        // model-load cost on the not-found path.
+        var result = _service.EditWithConcurrency(
+            category: "any", key: "missing",
+            data: "ignored", author: null, reason: null, tags: null, custom: null,
+            expectedLastModifiedAt: null);
+
+        Assert.Equal(EditOutcome.NotFound, result.Outcome);
+        Assert.Null(result.Entry);
+        Assert.Null(result.CurrentLastModifiedAt);
+    }
+
+    [Fact]
+    public void EditWithConcurrency_NoSuchEntry_WithExpected_StillReturnsNotFound()
+    {
+        // Same short-circuit when the caller passes an expected timestamp -
+        // existence check fires first, no Conflict noise.
+        var result = _service.EditWithConcurrency(
+            category: "any", key: "missing",
+            data: "ignored", author: null, reason: null, tags: null, custom: null,
+            expectedLastModifiedAt: DateTimeOffset.UtcNow);
+
+        Assert.Equal(EditOutcome.NotFound, result.Outcome);
+    }
+
+    [Fact]
     public void Options_ReturnsConfiguredOptions()
     {
         var options = _service.Options;
