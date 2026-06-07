@@ -268,6 +268,7 @@ var searchTopOption = new Option<int>("--top") { Description = "Max results", De
 searchTopOption.Aliases.Add("-n");
 var searchAuthorOption = new Option<string?>("--author") { Description = "Filter by author" };
 var searchTagsOption = new Option<string?>("--tags") { Description = "Filter by tags (comma-separated)" };
+var searchModeOption = new Option<string?>("--mode") { Description = "How to combine query tokens: any (default, OR), all (AND), or phrase (exact contiguous phrase)" };
 
 var searchCommand = new Command("search", "Search memories using hybrid semantic + keyword search");
 searchCommand.Arguments.Add(searchQueryArg);
@@ -275,6 +276,7 @@ searchCommand.Options.Add(searchCategoryOption);
 searchCommand.Options.Add(searchTopOption);
 searchCommand.Options.Add(searchAuthorOption);
 searchCommand.Options.Add(searchTagsOption);
+searchCommand.Options.Add(searchModeOption);
 
 searchCommand.SetAction(parseResult =>
 {
@@ -290,6 +292,7 @@ searchCommand.SetAction(parseResult =>
     var top = parseResult.GetValue(searchTopOption);
     var author = parseResult.GetValue(searchAuthorOption);
     var tags = parseResult.GetValue(searchTagsOption);
+    var searchMode = parseResult.GetValue(searchModeOption);
 
     var filter = new SearchFilter
     {
@@ -298,6 +301,7 @@ searchCommand.SetAction(parseResult =>
         Top = top,
         Author = author,
         Tags = ParseTags(tags),
+        Mode = ParseSearchMode(searchMode),
     };
 
     var results = service.Search(filter);
@@ -459,6 +463,17 @@ static List<string>? ParseTags(string? tags)
     return tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Where(t => !string.IsNullOrWhiteSpace(t))
         .ToList();
+}
+
+static SearchMode ParseSearchMode(string? mode)
+{
+    if (string.IsNullOrWhiteSpace(mode)) return SearchMode.Any;
+    return mode.Trim().ToLowerInvariant() switch
+    {
+        "all"    => SearchMode.All,
+        "phrase" => SearchMode.Phrase,
+        _        => SearchMode.Any,
+    };
 }
 
 static Dictionary<string, string>? ParseCustom(string? custom, JsonSerializerOptions jsonOptions)

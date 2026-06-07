@@ -33,7 +33,7 @@ public sealed class HybridSearchEngine
         var queryEmbedding = _embeddingService.Embed(filter.Query);
 
         // 1. Keyword search via FTS5 BM25
-        var keywordResults = _store.KeywordSearch(filter.Query, filter.Category);
+        var keywordResults = _store.KeywordSearch(filter.Query, filter.Category, filter.Mode);
 
         // 2. Vector search via brute-force cosine similarity (dot product on normalized vectors)
         var vectorResults = VectorSearch(queryEmbedding, filter.Category);

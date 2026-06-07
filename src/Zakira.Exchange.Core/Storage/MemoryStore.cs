@@ -269,12 +269,14 @@ public sealed class MemoryStore : IDisposable
     }
 
     /// <summary>
-    /// Performs FTS5 BM25 keyword search. Returns (category, key, bm25Score) tuples ranked by relevance.
+    /// Performs FTS5 BM25 keyword search. Returns (category, key, bm25Score) tuples
+    /// ranked by relevance. The <paramref name="mode"/> controls how query tokens
+    /// are combined: Any (default, OR), All (AND), or Phrase (single contiguous phrase).
     /// </summary>
-    public List<(string Category, string Key, double Bm25Score)> KeywordSearch(string query, string? category, int overFetchMultiplier = 3)
+    public List<(string Category, string Key, double Bm25Score)> KeywordSearch(string query, string? category, SearchMode mode = SearchMode.Any, int overFetchMultiplier = 3)
     {
-        // Escape FTS5 special characters and format as OR-connected tokens
-        var sanitized = SanitizeFtsQuery(query);
+        // Escape FTS5 special characters and build a MATCH expression per the requested mode
+        var sanitized = SanitizeFtsQuery(query, mode);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
             return [];
@@ -439,11 +441,19 @@ public sealed class MemoryStore : IDisposable
 
     /// <summary>
     /// Sanitizes a user query for FTS5 MATCH syntax.
-    /// Splits into tokens and joins with OR for broad matching.
+    /// Each token is wrapped in double quotes (FTS5 string-literal syntax) so it is
+    /// taken verbatim regardless of any special characters the user typed; the
+    /// sanitization upstream also strips non-alphanumeric chars so quotes never
+    /// appear inside a token. Tokens are then combined per the requested mode:
+    /// <list type="bullet">
+    /// <item><c>Any</c>: <c>"tok1" OR "tok2"</c> (broadest recall, default)</item>
+    /// <item><c>All</c>: <c>"tok1" AND "tok2"</c> (every token must appear)</item>
+    /// <item><c>Phrase</c>: <c>"tok1 tok2"</c> (single contiguous phrase)</item>
+    /// </list>
     /// </summary>
-    private static string SanitizeFtsQuery(string query)
+    private static string SanitizeFtsQuery(string query, SearchMode mode)
     {
-        // Remove FTS5 special characters, keep alphanumeric and spaces
+        // Strip FTS5 special characters per token; keep alphanumeric and underscore
         var tokens = query
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(t => new string(t.Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray()))
@@ -455,8 +465,12 @@ public sealed class MemoryStore : IDisposable
             return "";
         }
 
-        // Use OR to broaden matching
-        return string.Join(" OR ", tokens);
+        return mode switch
+        {
+            SearchMode.All    => string.Join(" AND ", tokens.Select(t => $"\"{t}\"")),
+            SearchMode.Phrase => "\"" + string.Join(" ", tokens) + "\"",
+            _                 => string.Join(" OR ", tokens.Select(t => $"\"{t}\"")),
+        };
     }
 
     public void Dispose()

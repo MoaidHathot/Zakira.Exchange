@@ -124,6 +124,67 @@ public class ToolBuilderTests
         Assert.Equal("3", result["c"]);
     }
 
+    // --- ParseSearchMode Tests ---
+
+    [Fact]
+    public void ParseSearchMode_Null_ReturnsAny()
+    {
+        var method = GetParseSearchModeMethod();
+        var result = (SearchMode)method.Invoke(null, [null])!;
+        Assert.Equal(SearchMode.Any, result);
+    }
+
+    [Fact]
+    public void ParseSearchMode_Empty_ReturnsAny()
+    {
+        var method = GetParseSearchModeMethod();
+        var result = (SearchMode)method.Invoke(null, [""])!;
+        Assert.Equal(SearchMode.Any, result);
+    }
+
+    [Fact]
+    public void ParseSearchMode_Whitespace_ReturnsAny()
+    {
+        var method = GetParseSearchModeMethod();
+        var result = (SearchMode)method.Invoke(null, ["   "])!;
+        Assert.Equal(SearchMode.Any, result);
+    }
+
+    [Fact]
+    public void ParseSearchMode_Any_ReturnsAny()
+    {
+        var method = GetParseSearchModeMethod();
+        Assert.Equal(SearchMode.Any, (SearchMode)method.Invoke(null, ["any"])!);
+        Assert.Equal(SearchMode.Any, (SearchMode)method.Invoke(null, ["ANY"])!);
+        Assert.Equal(SearchMode.Any, (SearchMode)method.Invoke(null, [" Any "])!);
+    }
+
+    [Fact]
+    public void ParseSearchMode_All_ReturnsAll()
+    {
+        var method = GetParseSearchModeMethod();
+        Assert.Equal(SearchMode.All, (SearchMode)method.Invoke(null, ["all"])!);
+        Assert.Equal(SearchMode.All, (SearchMode)method.Invoke(null, ["ALL"])!);
+        Assert.Equal(SearchMode.All, (SearchMode)method.Invoke(null, [" All "])!);
+    }
+
+    [Fact]
+    public void ParseSearchMode_Phrase_ReturnsPhrase()
+    {
+        var method = GetParseSearchModeMethod();
+        Assert.Equal(SearchMode.Phrase, (SearchMode)method.Invoke(null, ["phrase"])!);
+        Assert.Equal(SearchMode.Phrase, (SearchMode)method.Invoke(null, ["PHRASE"])!);
+        Assert.Equal(SearchMode.Phrase, (SearchMode)method.Invoke(null, [" Phrase "])!);
+    }
+
+    [Fact]
+    public void ParseSearchMode_UnknownValue_FallsBackToAny()
+    {
+        var method = GetParseSearchModeMethod();
+        Assert.Equal(SearchMode.Any, (SearchMode)method.Invoke(null, ["fuzzy"])!);
+        Assert.Equal(SearchMode.Any, (SearchMode)method.Invoke(null, ["123"])!);
+    }
+
     // --- BuildListFilter Tests ---
 
     [Fact]
@@ -322,6 +383,12 @@ public class ToolBuilderTests
     private static MethodInfo GetParseCustomMethod()
     {
         return typeof(ToolBuilder).GetMethod("ParseCustom",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+    }
+
+    private static MethodInfo GetParseSearchModeMethod()
+    {
+        return typeof(ToolBuilder).GetMethod("ParseSearchMode",
             BindingFlags.NonPublic | BindingFlags.Static)!;
     }
 

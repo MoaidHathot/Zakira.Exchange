@@ -296,7 +296,8 @@ public static class ToolBuilder
                     [Description("Search query - describe what you're looking for in natural language")] string query,
                     [Description("Maximum number of results (default: 10)")] int? top,
                     [Description("Filter by author")] string? author,
-                    [Description("Filter by tags (comma-separated, matches any)")] string? tags
+                    [Description("Filter by tags (comma-separated, matches any)")] string? tags,
+                    [Description("How to combine query tokens: 'any' (default, OR), 'all' (AND), or 'phrase' (exact contiguous phrase). Use 'all' or 'phrase' for stricter precision when 'any' is too broad.")] string? mode
                 ) =>
                 {
                     var filter = new SearchFilter
@@ -305,6 +306,7 @@ public static class ToolBuilder
                         Top = top ?? 10,
                         Author = author,
                         Tags = ParseTags(tags),
+                        Mode = ParseSearchMode(mode),
                     };
                     var results = service.Search(filter);
                     return FormatSearchResults(results);
@@ -324,7 +326,8 @@ public static class ToolBuilder
                 [Description("Filter by category (omit to search across all categories)")] string? category,
                 [Description("Maximum number of results (default: 10)")] int? top,
                 [Description("Filter by author")] string? author,
-                [Description("Filter by tags (comma-separated, matches any)")] string? tags
+                [Description("Filter by tags (comma-separated, matches any)")] string? tags,
+                [Description("How to combine query tokens: 'any' (default, OR), 'all' (AND), or 'phrase' (exact contiguous phrase). Use 'all' or 'phrase' for stricter precision when 'any' is too broad.")] string? mode
             ) =>
             {
                 var filter = new SearchFilter
@@ -334,6 +337,7 @@ public static class ToolBuilder
                     Top = top ?? 10,
                     Author = author,
                     Tags = ParseTags(tags),
+                    Mode = ParseSearchMode(mode),
                 };
                 var results = service.Search(filter);
                 return FormatSearchResults(results);
@@ -445,6 +449,26 @@ public static class ToolBuilder
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Parses a search mode string into a <see cref="SearchMode"/>. Accepts
+    /// "any" (default), "all", or "phrase" (case-insensitive). Unknown or null
+    /// values fall back to <see cref="SearchMode.Any"/> so callers never error.
+    /// </summary>
+    private static SearchMode ParseSearchMode(string? mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode))
+        {
+            return SearchMode.Any;
+        }
+
+        return mode.Trim().ToLowerInvariant() switch
+        {
+            "all"    => SearchMode.All,
+            "phrase" => SearchMode.Phrase,
+            _        => SearchMode.Any,
+        };
     }
 
     private static ListFilter BuildListFilter(string? category, int? top, string? author, string? tags, string? before, string? after)

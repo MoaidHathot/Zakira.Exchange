@@ -29,4 +29,13 @@ public sealed class SearchFilter
     /// Filter by tags (any match).
     /// </summary>
     public List<string>? Tags { get; set; }
+
+    /// <summary>
+    /// How the query's tokens are combined for the FTS5 (keyword) portion of the
+    /// hybrid search. Defaults to <see cref="SearchMode.Any"/> for broad recall;
+    /// callers can pick <see cref="SearchMode.All"/> for stricter AND-of-tokens
+    /// or <see cref="SearchMode.Phrase"/> for an exact phrase match. The vector
+    /// (semantic) portion is unaffected and always runs.
+    /// </summary>
+    public SearchMode Mode { get; set; } = SearchMode.Any;
 }

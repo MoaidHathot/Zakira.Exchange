@@ -427,10 +427,124 @@ public class MemoryStoreTests : IDisposable
     {
         _store.Create(CreateEntry(data: "test data with special chars"), null);
 
-        // FTS5 special characters should be sanitized
+        // FTS5 special characters are stripped per token, leaving alphanumerics/underscore.
+        // "test*AND\"special" has no space so it becomes the single token "testANDspecial",
+        // which (case-folded by FTS5 to "testandspecial") doesn't match any token in the data.
         var results = _store.KeywordSearch("test*AND\"special", null);
-        // Should not throw; may or may not return results depending on sanitization
         Assert.NotNull(results);
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void KeywordSearch_SpecialCharactersInQuery_AllModesNoException()
+    {
+        _store.Create(CreateEntry(data: "test data with special chars"), null);
+
+        // Whatever the user types, no mode should throw. FTS5 syntax characters
+        // (parens, quotes, asterisks, colons, etc.) are sanitized out of each token.
+        foreach (var mode in new[] { SearchMode.Any, SearchMode.All, SearchMode.Phrase })
+        {
+            var results = _store.KeywordSearch("test(special) -OR \"phrase\" :col*", null, mode);
+            Assert.NotNull(results);
+        }
+    }
+
+    [Fact]
+    public void KeywordSearch_DefaultModeIsAny()
+    {
+        _store.Create(CreateEntry(key: "k1", data: "alpha beta"), null);
+        _store.Create(CreateEntry(key: "k2", data: "alpha only"), null);
+        _store.Create(CreateEntry(key: "k3", data: "beta only"), null);
+
+        // Default mode (no argument) must behave identically to explicit SearchMode.Any:
+        // a multi-token query matches entries containing ANY token.
+        var defaultResults = _store.KeywordSearch("alpha beta", null);
+        var anyResults = _store.KeywordSearch("alpha beta", null, SearchMode.Any);
+
+        Assert.Equal(3, defaultResults.Count);
+        Assert.Equal(defaultResults.Select(r => r.Key).OrderBy(k => k),
+                     anyResults.Select(r => r.Key).OrderBy(k => k));
+    }
+
+    [Fact]
+    public void KeywordSearch_AnyMode_OrsTokens()
+    {
+        _store.Create(CreateEntry(key: "both",  data: "alpha beta"), null);
+        _store.Create(CreateEntry(key: "alpha", data: "alpha only"), null);
+        _store.Create(CreateEntry(key: "beta",  data: "beta only"), null);
+        _store.Create(CreateEntry(key: "neither", data: "unrelated"), null);
+
+        // Any: match entries containing any of the tokens
+        var results = _store.KeywordSearch("alpha beta", null, SearchMode.Any);
+
+        var keys = results.Select(r => r.Key).ToHashSet();
+        Assert.Contains("both", keys);
+        Assert.Contains("alpha", keys);
+        Assert.Contains("beta", keys);
+        Assert.DoesNotContain("neither", keys);
+    }
+
+    [Fact]
+    public void KeywordSearch_AllMode_AndsTokens()
+    {
+        _store.Create(CreateEntry(key: "both",  data: "alpha beta"), null);
+        _store.Create(CreateEntry(key: "alpha", data: "alpha only"), null);
+        _store.Create(CreateEntry(key: "beta",  data: "beta only"), null);
+
+        // All: match only entries containing every token (any order)
+        var results = _store.KeywordSearch("alpha beta", null, SearchMode.All);
+
+        var keys = results.Select(r => r.Key).ToList();
+        Assert.Single(keys);
+        Assert.Equal("both", keys[0]);
+    }
+
+    [Fact]
+    public void KeywordSearch_AllMode_TokenOrderIndependent()
+    {
+        _store.Create(CreateEntry(key: "ab", data: "alpha then beta"), null);
+        _store.Create(CreateEntry(key: "ba", data: "beta before alpha"), null);
+
+        var results = _store.KeywordSearch("alpha beta", null, SearchMode.All);
+        var keys = results.Select(r => r.Key).ToHashSet();
+
+        Assert.Equal(2, keys.Count);
+        Assert.Contains("ab", keys);
+        Assert.Contains("ba", keys);
+    }
+
+    [Fact]
+    public void KeywordSearch_PhraseMode_RequiresExactContiguousPhrase()
+    {
+        _store.Create(CreateEntry(key: "exact",      data: "the auth strategy is jwt"), null);
+        _store.Create(CreateEntry(key: "separated",  data: "auth is the strategy"), null);
+        _store.Create(CreateEntry(key: "only-auth",  data: "just auth no other word"), null);
+
+        // Phrase: tokens must appear in order, contiguously
+        var results = _store.KeywordSearch("auth strategy", null, SearchMode.Phrase);
+
+        var keys = results.Select(r => r.Key).ToList();
+        Assert.Single(keys);
+        Assert.Equal("exact", keys[0]);
+    }
+
+    [Fact]
+    public void KeywordSearch_AllMode_NoMatchReturnsEmpty()
+    {
+        _store.Create(CreateEntry(key: "k1", data: "alpha gamma"), null);
+
+        var results = _store.KeywordSearch("alpha beta", null, SearchMode.All);
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void KeywordSearch_PhraseMode_NoMatchReturnsEmpty()
+    {
+        _store.Create(CreateEntry(key: "k1", data: "alpha beta gamma delta"), null);
+
+        // Phrase "beta alpha" not present (reversed order)
+        var results = _store.KeywordSearch("beta alpha", null, SearchMode.Phrase);
+        Assert.Empty(results);
     }
 
     // --- GetAllEmbeddings Tests ---
