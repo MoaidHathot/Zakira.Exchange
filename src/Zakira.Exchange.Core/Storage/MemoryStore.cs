@@ -6,11 +6,15 @@ namespace Zakira.Exchange.Core.Storage;
 
 /// <summary>
 /// SQLite-based storage for memory entries with FTS5 full-text search support.
-/// Handles CRUD operations, embedding storage, and keyword search via BM25.
+/// Thread-safe: uses connection-per-operation against the built-in ADO.NET pool,
+/// so multiple readers and writers can call the public API concurrently. SQLite
+/// WAL mode (enabled at construction) lets concurrent readers run without
+/// blocking the single in-flight writer; a per-connection busy_timeout gives
+/// contending writers a bounded wait instead of an immediate SQLITE_BUSY error.
 /// </summary>
 public sealed class MemoryStore : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private readonly string _connectionString;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -19,26 +23,45 @@ public sealed class MemoryStore : IDisposable
 
     public MemoryStore(string databasePath)
     {
-        var connectionString = new SqliteConnectionStringBuilder
+        _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Cache = SqliteCacheMode.Shared,
         }.ToString();
 
-        _connection = new SqliteConnection(connectionString);
-        _connection.Open();
-
-        // Enable WAL mode for concurrent read/write
-        Execute("PRAGMA journal_mode=WAL;");
-        Execute("PRAGMA synchronous=NORMAL;");
-
-        InitializeSchema();
+        // One-time init on a single connection that is then returned to the pool.
+        // WAL mode is a file-level setting that persists across connections.
+        // synchronous=NORMAL and busy_timeout are per-connection; they are re-applied
+        // by OpenConnection() so fresh pool entries also use them.
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        Execute(conn, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;");
+        InitializeSchema(conn);
     }
 
-    private void InitializeSchema()
+    /// <summary>
+    /// Opens a fresh pooled connection. Per-call cost is sub-millisecond on warm
+    /// pools. Per-connection PRAGMAs are re-applied so fresh pool entries match.
+    /// </summary>
+    private SqliteConnection OpenConnection()
     {
-        Execute("""
+        var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        Execute(conn, "PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;");
+        return conn;
+    }
+
+    private static void Execute(SqliteConnection conn, string sql)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void InitializeSchema(SqliteConnection conn)
+    {
+        Execute(conn, """
             CREATE TABLE IF NOT EXISTS memories (
                 category         TEXT NOT NULL,
                 key              TEXT NOT NULL,
@@ -54,7 +77,7 @@ public sealed class MemoryStore : IDisposable
             );
             """);
 
-        Execute("""
+        Execute(conn, """
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
                 category, key, data, author, reason, tags,
                 content='memories',
@@ -63,21 +86,21 @@ public sealed class MemoryStore : IDisposable
             """);
 
         // Triggers to keep FTS5 in sync with the main table
-        Execute("""
+        Execute(conn, """
             CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
                 INSERT INTO memories_fts(rowid, category, key, data, author, reason, tags)
                 VALUES (new.rowid, new.category, new.key, new.data, new.author, new.reason, new.tags);
             END;
             """);
 
-        Execute("""
+        Execute(conn, """
             CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
                 INSERT INTO memories_fts(memories_fts, rowid, category, key, data, author, reason, tags)
                 VALUES ('delete', old.rowid, old.category, old.key, old.data, old.author, old.reason, old.tags);
             END;
             """);
 
-        Execute("""
+        Execute(conn, """
             CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
                 INSERT INTO memories_fts(memories_fts, rowid, category, key, data, author, reason, tags)
                 VALUES ('delete', old.rowid, old.category, old.key, old.data, old.author, old.reason, old.tags);
@@ -86,10 +109,10 @@ public sealed class MemoryStore : IDisposable
             END;
             """);
 
-        // Index for timestamp-based queries
-        Execute("CREATE INDEX IF NOT EXISTS idx_memories_modified ON memories(last_modified_at);");
-        Execute("CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);");
-        Execute("CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);");
+        // Indexes for timestamp-based and category queries
+        Execute(conn, "CREATE INDEX IF NOT EXISTS idx_memories_modified ON memories(last_modified_at);");
+        Execute(conn, "CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);");
+        Execute(conn, "CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);");
     }
 
     /// <summary>
@@ -97,7 +120,8 @@ public sealed class MemoryStore : IDisposable
     /// </summary>
     public void Create(MemoryEntry entry, float[]? embedding)
     {
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO memories (category, key, data, author, reason, tags, custom, created_at, last_modified_at, embedding)
             VALUES (@category, @key, @data, @author, @reason, @tags, @custom, @createdAt, @lastModifiedAt, @embedding);
@@ -120,7 +144,8 @@ public sealed class MemoryStore : IDisposable
     /// </summary>
     public bool Update(MemoryEntry entry, float[]? embedding)
     {
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             UPDATE memories
             SET data = @data,
@@ -143,7 +168,8 @@ public sealed class MemoryStore : IDisposable
     /// </summary>
     public bool Delete(string category, string key)
     {
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM memories WHERE category = @category AND key = @key;";
         cmd.Parameters.AddWithValue("@category", category);
         cmd.Parameters.AddWithValue("@key", key);
@@ -155,7 +181,8 @@ public sealed class MemoryStore : IDisposable
     /// </summary>
     public MemoryEntry? Get(string category, string key)
     {
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT category, key, data, author, reason, tags, custom, created_at, last_modified_at
             FROM memories
@@ -216,7 +243,8 @@ public sealed class MemoryStore : IDisposable
             ? "WHERE " + string.Join(" AND ", conditions)
             : "";
 
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
             SELECT category, key, data, author, reason, tags, custom, created_at, last_modified_at
             FROM memories
@@ -256,7 +284,8 @@ public sealed class MemoryStore : IDisposable
             ? "AND m.category = @category"
             : "";
 
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
             SELECT m.category, m.key, bm25(memories_fts) as score
             FROM memories_fts
@@ -293,7 +322,8 @@ public sealed class MemoryStore : IDisposable
     /// </summary>
     public List<(string Category, string Key, float[] Embedding)> GetAllEmbeddings(string? category)
     {
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
 
         if (category is not null)
         {
@@ -322,7 +352,8 @@ public sealed class MemoryStore : IDisposable
     /// </summary>
     public List<string> GetCategories()
     {
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT DISTINCT category FROM memories ORDER BY category;";
         var results = new List<string>();
         using var reader = cmd.ExecuteReader();
@@ -338,7 +369,8 @@ public sealed class MemoryStore : IDisposable
     /// </summary>
     public long GetCount(string? category = null)
     {
-        using var cmd = _connection.CreateCommand();
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
         if (category is not null)
         {
             cmd.CommandText = "SELECT COUNT(*) FROM memories WHERE category = @category;";
@@ -351,7 +383,7 @@ public sealed class MemoryStore : IDisposable
         return (long)cmd.ExecuteScalar()!;
     }
 
-    private void BindEntryParameters(SqliteCommand cmd, MemoryEntry entry, float[]? embedding)
+    private static void BindEntryParameters(SqliteCommand cmd, MemoryEntry entry, float[]? embedding)
     {
         cmd.Parameters.AddWithValue("@category", entry.Category);
         cmd.Parameters.AddWithValue("@key", entry.Key);
@@ -427,15 +459,11 @@ public sealed class MemoryStore : IDisposable
         return string.Join(" OR ", tokens);
     }
 
-    private void Execute(string sql)
-    {
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = sql;
-        cmd.ExecuteNonQuery();
-    }
-
     public void Dispose()
     {
-        _connection.Dispose();
+        // Release any pooled connections for this database so its files
+        // can be deleted or moved by callers (e.g., test cleanup).
+        using var conn = new SqliteConnection(_connectionString);
+        SqliteConnection.ClearPool(conn);
     }
 }
