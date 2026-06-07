@@ -80,6 +80,16 @@ SQLite FTS5 performs full-text search with BM25 scoring against the entry's inde
 
 BM25 is a probabilistic ranking function that scores documents based on term frequency, inverse document frequency, and document length normalization.
 
+How the query's tokens combine into an FTS5 expression depends on the requested **search mode**:
+
+| Mode | FTS5 expression | When to use |
+|------|-----------------|-------------|
+| `any` (default) | `"tok1" OR "tok2" OR ...` | Broadest recall; matches entries with any token |
+| `all` | `"tok1" AND "tok2" AND ...` | Stricter precision; every token must appear |
+| `phrase` | `"tok1 tok2 ..."` (single phrase string) | Strictest; tokens must appear in the exact order, contiguously |
+
+Tokens are sanitized (alphanumeric and underscore only) and each token is wrapped in FTS5 string-literal syntax (double quotes), so user queries containing FTS5 metacharacters never cause syntax errors. Search mode is passed through `SearchFilter.Mode` and exposed by both the MCP `search_memories` tool and the `--mode` CLI flag. The vector (semantic) portion of the hybrid search is unaffected by mode and always runs.
+
 ### Step 2: Vector Search (Cosine Similarity)
 
 The query is embedded using the `all-MiniLM-L6-v2` ONNX model:
@@ -149,6 +159,31 @@ All entries are stored in a single `memories` table with category as a column. T
 4. **Indexes** -- on last_modified_at, created_at, and category for efficient filtering
 
 WAL (Write-Ahead Logging) mode is enabled on the database connection for concurrent read/write access.
+
+---
+
+## Concurrency and Thread Safety
+
+`MemoryStore` is thread-safe. Internally it holds only a connection **string**, not a live connection; every public method opens its own connection from the `Microsoft.Data.Sqlite` ADO.NET pool, executes its statements, and returns the connection to the pool on dispose. This means:
+
+- Multiple threads may call any combination of `Create`, `Update`, `Delete`, `Get`, `List`, `KeywordSearch`, etc. concurrently without external synchronization.
+- WAL mode lets concurrent **readers** run in parallel with the single in-flight **writer** without blocking each other.
+- A per-connection `busy_timeout=5000` gives contending writers a bounded wait (up to 5 seconds) instead of an immediate `SQLITE_BUSY` error.
+
+`MemoryService` is also safe to register as a singleton in an MCP / DI host: it delegates all state to `MemoryStore`, and the lazily-initialised embedding service is guarded by a lock.
+
+---
+
+## Optimistic Concurrency on Edit
+
+Two agents (or two instances of the same agent) may try to edit the same `(category, key)` at the same time. By default both edits succeed and the second silently overwrites the first (last-write-wins). When that's not acceptable, callers can opt into **optimistic concurrency**:
+
+- `MemoryStore.Update(entry, embedding, expectedLastModifiedAt?)` returns an `UpdateOutcome` of `Updated`, `NotFound`, or `Conflict`. Pass the row's `last_modified_at` value as it was when you read it; the UPDATE's WHERE clause includes `AND last_modified_at = @expected`, so a racing writer that has since changed the row will cause this call to fail with `Conflict` rather than overwrite their change.
+- `MemoryService.EditWithConcurrency(...)` is the same idea at the service layer, returning an `EditResult` with the conflict's current `LastModifiedAt` so the caller can re-fetch, merge, and retry.
+- The MCP `edit_memory` tool exposes `expectedLastModifiedAt`. On conflict it returns a human-readable message including the current timestamp.
+- The CLI `edit` command exposes `--expected-modified` and exits with **code 2** on conflict (distinct from code 1 for not-found), so scripts can detect and retry.
+
+Backward compatibility: the original `bool Update(entry, embedding)` and `MemoryEntry? Edit(...)` overloads remain and still mean "last-write-wins". They simply delegate to the new overloads with `expectedLastModifiedAt: null`.
 
 ---
 

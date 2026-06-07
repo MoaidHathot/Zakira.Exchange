@@ -164,8 +164,11 @@ Edits an existing memory entry. Only provided fields are updated.
 | `reason` | no | Updated reason |
 | `tags` | no | Updated tags |
 | `custom` | no | Updated custom metadata |
+| `expectedLastModifiedAt` | no | ISO 8601 (UTC) timestamp for optimistic concurrency. Pass the value you read with `get_memory`; the edit only applies if it still matches. Omit for last-write-wins. |
 
 *Hidden when `--category` is set.
+
+If `expectedLastModifiedAt` is supplied and the entry has since been modified, the call returns a conflict message that includes the current `lastModifiedAt`. Re-fetch with `get_memory`, merge your changes, and call `edit_memory` again with the new `expectedLastModifiedAt`.
 
 **Available in modes:** full, no-delete
 
@@ -231,6 +234,7 @@ Searches for memories using hybrid semantic + keyword search. Uses natural langu
 | `top` | no | Maximum number of results (default: 10) |
 | `author` | no | Filter by author |
 | `tags` | no | Filter by tags (comma-separated, matches any) |
+| `mode` | no | How query tokens combine in the keyword (FTS5) portion: `any` (default, OR), `all` (AND), or `phrase` (exact contiguous phrase). The vector (semantic) portion is unaffected. |
 
 *Hidden when `--category` is set.
 

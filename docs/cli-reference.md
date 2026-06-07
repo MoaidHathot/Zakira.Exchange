@@ -72,12 +72,25 @@ zakira edit <category> <key> [options]
 | `--reason` | option | no | Updated reason |
 | `--tags` | option | no | Updated comma-separated tags |
 | `--custom` | option | no | Updated JSON object of custom metadata |
+| `--expected-modified` | option | no | ISO 8601 (UTC) timestamp for optimistic concurrency. Edit only applies if the entry's current `lastModifiedAt` matches; otherwise exits with code **2** (conflict). Omit for last-write-wins. |
 
 **Example:**
 ```bash
 zakira edit decisions auth-strategy \
   --data "Use JWT with short-lived access tokens (15min) and refresh token rotation (7 days)" \
   --tags "security,jwt,authentication,updated"
+```
+
+**Optimistic concurrency example:**
+```bash
+# 1. Read the current timestamp
+zakira get decisions auth-strategy
+# ... note "Last Modified: 2026-06-07T15:32:11.234Z"
+
+# 2. Edit guarded by that timestamp
+zakira edit decisions auth-strategy --data "new value" \
+  --expected-modified 2026-06-07T15:32:11.234Z
+# Exit 0 = updated, 2 = conflict (re-fetch and retry), 1 = not found / other error
 ```
 
 ---
@@ -174,11 +187,18 @@ zakira search <query> [options]
 | `--top` / `-n` | option | no | Max results (default: 10) |
 | `--author` | option | no | Filter by author |
 | `--tags` | option | no | Filter by tags (comma-separated, matches any) |
+| `--mode` | option | no | How query tokens combine in the keyword (FTS5) portion: `any` (default, OR), `all` (AND), or `phrase` (exact contiguous phrase). The vector (semantic) portion is unaffected. |
 
 **Examples:**
 ```bash
-# Semantic search across all memories
+# Semantic search across all memories (default mode = any)
 zakira search "caching strategy"
+
+# Stricter precision: require every token to appear in the same entry
+zakira search "auth token rotation" --mode all
+
+# Exact contiguous phrase
+zakira search "blue green deployment" --mode phrase
 
 # Search within a specific category
 zakira search "authentication approach" --cat decisions
